@@ -29,3 +29,38 @@ jobs:
 
       - name: Host smoke (real ffmpeg + mock model gateway)
         run: npm run smoke:host
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies (also builds lib/ via prepare)
+        run: npm install
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright + Chromium + CJK fonts
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+          sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+
+      - name: Render workbench screenshots (real client bundle)
+        run: python scripts/preview/shots.py
+
+      - name: Check button/select contrast under broken host tokens
+        run: python scripts/preview/verify-buttons.py
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-screenshots
+          path: output/preview
+          if-no-files-found: warn
