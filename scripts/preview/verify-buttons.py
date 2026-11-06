@@ -1,4 +1,4 @@
-﻿"""在「宿主 token 混搭」的坏情况下检查按钮文字对比度（settings / workbench 两个视图）。"""
+"""在「宿主 token 混搭」的坏情况下检查按钮文字对比度（settings / workbench 两个视图）。"""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 

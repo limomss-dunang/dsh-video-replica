@@ -1,0 +1,77 @@
+name: Bug report / 问题反馈
+description: 报告可复现的 bug（模型/网关异常请附日志）
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量把「哪一步 + 什么模型/协议 + 日志」写全，这决定了能不能复现。
+        安全问题**不要**发在这里，请走 [SECURITY.md](https://github.com/limomss-dunang/dsh-video-replica/blob/main/SECURITY.md) 里的私密通道。
+  - type: textarea
+    id: what
+    attributes:
+      label: 问题描述
+      description: 发生了什么，和预期有什么不同
+      placeholder: 例如：⑤ 生成视频点了没反应，run.json 里 segments 一直是 pending
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从哪一步开始、点了什么、输入是什么
+      placeholder: |
+        1. 新建复刻，粘贴 https://...
+        2. ① 解析下载 → 成功
+        3. ④ 参考图匹配 → 第 2 张报 429
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 运行信息 / 日志
+      description: 运行详情里的「运行日志」片段，或 run.json 里相关字段。**提交前删掉 API Key、Cookie、个人信息**
+      render: text
+    validations:
+      required: false
+  - type: dropdown
+    id: step
+    attributes:
+      label: 出问题的步骤
+      options:
+        - ① 解析下载
+        - ② AI 拆解
+        - ③ AI 仿写
+        - ④ 参考图匹配
+        - ⑤ AI 生成视频
+        - ⑥ 合成成片
+        - 设置 / 界面
+        - 安装 / 启动
+    validations:
+      required: true
+  - type: input
+    id: models
+    attributes:
+      label: 相关模型与协议
+      description: 例如「拆解 dsh:gemini-3.1-pro-preview；视频 ark-seedance doubao-seedance-2-0-mini」
+      placeholder: 步骤 → 来源（DSH / 手填）→ 模型 → 协议
+    validations:
+      required: false
+  - type: input
+    id: env
+    attributes:
+      label: 环境
+      description: 操作系统、DSH 版本、插件版本、Node、ffmpeg 版本
+      placeholder: Windows 11 / DSH 0.1.x / dsh-video-replica 0.1.0 / Node 22 / ffmpeg 8.0
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 已搜索过现有 issue，没有重复
+          required: true
+        - label: 日志里已删除密钥 / Cookie / 个人隐私信息
+          required: true
