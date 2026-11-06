@@ -2,6 +2,8 @@
 
 ![CI](https://github.com/limomss-dunang/dsh-video-replica/actions/workflows/ci.yml/badge.svg)  ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
+官网：[dimexplore.com](https://dimexplore.com)（[产品中心](https://dimexplore.com/products.html) · [案例场景](https://dimexplore.com/cases.html)）
+
 DeepSeek Harness 插件。粘贴一条抖音 / 小红书 / 视频号分享链接（或直接上传视频），
 自动跑完「下载解析 → AI 拆解 → AI 仿写 → 产品参考图匹配 → AI 生成分镜视频 →
 ffmpeg 合成成片」六步，产出一条可直接发布的竖屏成片。
