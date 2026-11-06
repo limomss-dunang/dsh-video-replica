@@ -1,0 +1,18 @@
+# 依赖
+node_modules/
+
+# 构建产物（由 npm run build / prepare 生成）
+lib/
+
+# 本地预览截图、真实运行产物
+output/
+
+# 日志与系统文件
+*.log
+.DS_Store
+Thumbs.db
+
+# 密钥与本地配置（插件真实配置在 ~/.dsh/storages，不在仓库内）
+.env
+.env.*
+config.local.json

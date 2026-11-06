@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Video Replica">
+  <defs>
+    <linearGradient id="dvr-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3b6ef6"/>
+      <stop offset="100%" stop-color="#8b46f0"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#dvr-grad)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="14" y="21" width="36" height="26" rx="5"/>
+    <path d="M14 29h36"/>
+    <path d="M23 21v8M33 21v8M43 21v8"/>
+  </g>
+  <path d="M28.5 35.5l8.5 4.6-8.5 4.6z" fill="#ffffff"/>
+  <g fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" opacity="0.92">
+    <path d="M48.5 14.5l1.6 3.6 3.6 1.6-3.6 1.6-1.6 3.6-1.6-3.6-3.6-1.6 3.6-1.6z"/>
+  </g>
+</svg>

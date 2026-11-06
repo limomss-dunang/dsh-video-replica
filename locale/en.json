@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Video Replica",
+    "description": "Viral video replica studio: parse Douyin/Xiaohongshu/WeChat Channels links, analyze the source, rewrite the script, match product keyframes, generate shot videos with AI, then compose the final cut with ffmpeg. Every step's model is configurable."
+  }
+}

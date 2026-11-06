@@ -1,0 +1,327 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>dsh-video-replica · 工作台预览（真实 bundle）</title>
+<style>
+  :root {
+    --dsw-alias-bg-base: #ffffff;
+    --dsw-alias-bg-layer-1: #fbfcfd;
+    --dsw-alias-bg-layer-2: #f1f3f5;
+    --dsw-alias-bg-overlay: #ffffff;
+    --dsw-alias-border-l1: #e6e9ec;
+    --dsw-alias-border-l2: #cfd5db;
+    --dsw-alias-brand-primary: #3b6ef6;
+    --dsw-alias-label-primary: #1d2126;
+    --dsw-alias-label-secondary: #6b7680;
+    --dsw-alias-state-error-primary: #d92d20;
+    --dsw-alias-state-success-primary: #18a058;
+    --dsw-alias-state-warn-primary: #d97706;
+    --dsw-alias-state-idle-primary: #98a2ac;
+    --dsw-specific-sidebar-fill: #f7f8fa;
+  }
+  html[data-theme="dark"] {
+    --dsw-alias-bg-base: #16181c;
+    --dsw-alias-bg-layer-1: #1c1f24;
+    --dsw-alias-bg-layer-2: #24282e;
+    --dsw-alias-bg-overlay: #1c1f24;
+    --dsw-alias-border-l1: #2c3138;
+    --dsw-alias-border-l2: #3a4048;
+    --dsw-alias-brand-primary: #6b93ff;
+    --dsw-alias-label-primary: #e8ecf1;
+    --dsw-alias-label-secondary: #939daa;
+    --dsw-alias-state-error-primary: #f36b62;
+    --dsw-alias-state-success-primary: #3fbf7f;
+    --dsw-alias-state-warn-primary: #e9a23b;
+    --dsw-alias-state-idle-primary: #6b747f;
+    --dsw-specific-sidebar-fill: #14161a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
+  .frame { display: grid; grid-template-columns: 232px minmax(0, 1fr); height: 100vh; }
+  [data-pane="sidebar"] { background: var(--dsw-specific-sidebar-fill); border-right: 1px solid var(--dsw-alias-border-l1); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .logoRow { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; padding: 4px 6px 10px; }
+  .logo-dot { width: 18px; height: 18px; border-radius: 6px; background: linear-gradient(135deg,#3b6ef6,#8b46f0); }
+  [data-pane="conversation"] { min-width: 0; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr); }
+  .native-chat { padding: 24px; color: var(--dsw-alias-label-secondary); font-size: 13px; }
+  [data-dsh-part="new-session"] { height: 32px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12.5px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div data-pane="sidebar">
+    <div class="logoRow"><span class="logo-dot"></span> DeepSeek Harness</div>
+    <button data-dsh-part="new-session" aria-label="新会话">＋ 新会话</button>
+  </div>
+  <div data-pane="conversation"><div class="native-chat">原生会话视图（插件面板打开时被接管）</div></div>
+</div>
+
+<script src="../../node_modules/react/umd/react.development.js"></script>
+<script src="../../node_modules/react-dom/umd/react-dom.development.js"></script>
+<script>
+  // 模拟 DSH Web 壳的浏览器模块加载器：CJS 工厂 + 共享的 React 运行时。
+  // 注意 jsx/jsxs 的第三个参数是 key：要还原成 React 的 key，否则 key 会被当成孩子。
+  window.__ModuleLoader__ = {
+    load({ id, factory }) {
+      const runtime = {
+        jsx(type, props, key) {
+          const { children, ...rest } = props || {}
+          const finalProps = key === undefined ? rest : { ...rest, key }
+          if (children === undefined) return React.createElement(type, finalProps)
+          return Array.isArray(children)
+            ? React.createElement(type, finalProps, ...children)
+            : React.createElement(type, finalProps, children)
+        },
+        jsxs(type, props, key) { return runtime.jsx(type, props, key) },
+        Fragment: React.Fragment,
+      }
+      window.__pluginExports = factory(name => {
+        if (name === 'react') return React
+        if (name === 'react-dom/client') return ReactDOM
+        if (name === 'react/jsx-runtime') return runtime
+        throw new Error('unexpected require: ' + name)
+      })
+    },
+  }
+</script>
+
+<script>
+  // ---- 预览用数据（与真实桥接信封一致） ----
+  const params = new URLSearchParams(location.search)
+  const stepParam = params.get('step') || 'input'
+  const theme = params.get('theme') || 'light'
+  const busy = params.get('busy') === '1'
+  document.documentElement.dataset.theme = theme
+
+  const now = Date.now()
+  const DSH_CATALOG = {
+    providers: [
+      {
+        id: 'mimo', name: '小米 MiMo', routeReady: true,
+        models: [
+          { id: 'mimo-v2.5', name: 'MiMo v2.5（视觉）', modalities: ['text', 'image'] },
+          { id: 'mimo-v2.5-pro', name: 'MiMo v2.5 Pro', modalities: ['text'] },
+        ],
+      },
+      {
+        id: 'ark', name: '火山方舟', routeReady: true,
+        models: [
+          { id: 'doubao-seedance-2-0-260128', name: 'Seedance 2.0', modalities: ['text', 'image'] },
+          { id: 'doubao-seedream-5-0-260128', name: 'Seedream 5.0', modalities: ['text', 'image'] },
+          { id: 'doubao-seedance-2-0-mini-260615', name: 'Seedance 2.0 mini', modalities: ['text', 'image'] },
+        ],
+      },
+      {
+        id: 'deepseek', name: 'DeepSeek 官方', routeReady: false,
+        models: [
+          { id: 'deepseek-chat', name: 'DeepSeek Chat', modalities: ['text'] },
+          { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', modalities: ['text'] },
+        ],
+      },
+    ],
+    default: { provider: 'mimo', model: 'mimo-v2.5' },
+    errors: [],
+  }
+
+  const CONFIG = {
+    enabled: true, dataDir: '',
+    parser: { source: 'custom', dshProvider: '', dshModel: '', apiUrl: 'https://api.hoxhox.cn/api/parse.php', apiKey: '••••••9f2a', model: '', protocol: 'parser-json', extraJson: '', timeoutSec: 120, mode: 'auto', videoUrlPath: '' },
+    analyze: { source: 'dsh', dshProvider: 'mimo', dshModel: 'mimo-v2.5', apiUrl: 'https://api.xiaomimimo.com/v1', apiKey: '••••••3d81', model: 'mimo-v2.5', protocol: 'chat', extraJson: '', timeoutSec: 300, frameCount: 12, maxFrameSide: 1024 },
+    rewrite: { source: 'custom', dshProvider: '', dshModel: '', apiUrl: 'https://api.xiaomimimo.com/v1', apiKey: '••••••3d81', model: 'mimo-v2.5-pro', protocol: 'chat', extraJson: '', timeoutSec: 180 },
+    image: { source: 'dsh', dshProvider: 'ark', dshModel: 'doubao-seedream-5-0-260128', apiUrl: 'https://ark.cn-beijing.volces.com/api/v3', apiKey: '••••••7c40', model: 'doubao-seedream-5-0-260128', protocol: 'openai-images', extraJson: '', timeoutSec: 180 },
+    video: { source: 'dsh', dshProvider: 'ark', dshModel: 'doubao-seedance-2-0-260128', apiUrl: 'https://ark.cn-beijing.volces.com/api/v3', apiKey: '••••••7c40', model: 'doubao-seedance-2-0-260128', protocol: 'ark-seedance', extraJson: '', timeoutSec: 900, secondsPerSegment: 10, size: '720x1280', pollSec: 5, concurrency: 2 },
+    tts: { source: 'custom', dshProvider: '', dshModel: '', apiUrl: 'https://api.xiaomimimo.com/v1', apiKey: '', model: '', protocol: 'openai-tts', extraJson: '', timeoutSec: 180, voice: 'alloy', speed: 1, enabled: false },
+    asr: { source: 'custom', dshProvider: '', dshModel: '', apiUrl: '', apiKey: '', model: '', protocol: 'openai-transcription', extraJson: '', timeoutSec: 300, enabled: false, language: '' },
+    media: { ffmpegPath: 'ffmpeg', ffprobePath: 'ffprobe', ytDlpPath: 'yt-dlp' },
+    compose: { size: '', fps: 30, burnSubtitles: true, subtitleFontSize: 15, bgmPath: '', bgmVolume: 0.18, perSegmentTts: true },
+  }
+
+  const RUNS = [
+    { id: 'run-1', title: '苹屿乌龙轻乳茶 · 复刻', createdAt: now - 3_600_000, updatedAt: now - 60_000, platform: 'douyin', status: 'done', currentStep: 'compose', completed: 6 },
+    { id: 'run-2', title: '国风轻乳茶 · 下午茶场景', createdAt: now - 86_400_000, updatedAt: now - 90_000_000, platform: 'xiaohongshu', status: 'failed', currentStep: 'generate', completed: 3 },
+    { id: 'run-3', title: '咖啡挂耳 · 通勤早晨', createdAt: now - 172_800_000, updatedAt: now - 172_000_000, platform: 'channels', status: 'idle', currentStep: 'rewrite', completed: 2 },
+  ]
+
+  const ANALYSIS = {
+    meta: { durationSec: 31.4, shotCount: 8, resolution: '1080x1920', fps: 30, style: '实拍写实', pacing: '前 3 秒快切，中段放慢讲卖点' },
+    summary: '用「办公室下午 3 点犯困」的共鸣开场，接 3 个产品特写卖点，最后用价格反差收口。',
+    hook: { type: '共鸣式痛点', text: '下午三点，眼皮开始打架', whyItWorks: '先用具体场景唤醒身体记忆，观众对号入座后自然留在画面里。', seconds: 2.8 },
+    shots: [
+      { index: 1, startSec: 0, endSec: 2.8, shotType: '中景', camera: '固定', visual: '办公桌前，女生趴在桌上打哈欠，桌上散落文件', voiceover: '下午三点，眼皮开始打架', onscreenText: '下午三点', emotion: '共鸣', purpose: '钩子' },
+      { index: 2, startSec: 2.8, endSec: 6.4, shotType: '特写', camera: '推', visual: '一杯国风包装奶茶被推入画面，杯壁挂霜', voiceover: '同事递来这一杯', onscreenText: '同事递来一杯', emotion: '惊喜', purpose: '转折' },
+      { index: 3, startSec: 6.4, endSec: 10.2, shotType: '大特写', camera: '固定', visual: '杯盖打开，苹果片与乌龙茶汤一起晃动', voiceover: '苹果配乌龙，居然这么搭', onscreenText: '苹果 + 乌龙', emotion: '好奇', purpose: '卖点一' },
+      { index: 4, startSec: 10.2, endSec: 14.8, shotType: '中景', camera: '移', visual: '女生喝一口，眼睛睁大，背景是窗边光', voiceover: '三分甜，喝完不罪恶', onscreenText: '三分甜', emotion: '满足', purpose: '卖点二' },
+      { index: 5, startSec: 14.8, endSec: 19.6, shotType: '全景', camera: '固定', visual: '桌面摆盘，奶茶与文件、键盘同框', voiceover: '下午茶就该这样', onscreenText: '下午三点半', emotion: '向往', purpose: '场景' },
+      { index: 6, startSec: 19.6, endSec: 24.1, shotType: '特写', camera: '摇', visual: '手指划过包装上的国风纹样', voiceover: '包装也长在审美上', onscreenText: '国风轻盈', emotion: '认同', purpose: '卖点三' },
+      { index: 7, startSec: 24.1, endSec: 28.6, shotType: '中景', camera: '推', visual: '两杯并排，价格标签入画', voiceover: '两杯才二十六', onscreenText: '两杯 26 元', emotion: '惊喜', purpose: '价格锚点' },
+      { index: 8, startSec: 28.6, endSec: 31.4, shotType: '全景', camera: '固定', visual: '女生举杯对镜头示意，画面定格', voiceover: '下午茶，选它', onscreenText: '下午茶 · 选它', emotion: '号召', purpose: '行动号召' },
+    ],
+    rhythm: { avgShotSec: 3.9, beatPattern: '2.8s 钩子 → 三段 3.5~4.5s 卖点 → 2 次价格反转', cutPoints: [2.8, 6.4, 10.2, 14.8, 19.6, 24.1, 28.6] },
+    style: { palette: ['#f7f2ea 暖白', '#c8a06a 麦金', '#5d7d5a 茶青'], typography: '左上角细体大字，白色描边', music: '未识别（无音频输入）', colorGrade: '低饱和暖调，高光柔化', subject: '办公室女性 + 国风奶茶' },
+    dna: ['具体时间点共鸣开场（下午三点）', '痛点 → 同事递来 → 转折', '三个卖点各配一个特写动作', '价格用「两杯」做锚点', '结尾一句行动号召'],
+    scores: { hook: 9, retention: 7, conversion: 8, overall: 8 },
+    frameFiles: ['frame-01.jpg', 'frame-02.jpg', 'frame-03.jpg', 'frame-04.jpg', 'frame-05.jpg', 'frame-06.jpg'],
+    analyzedAt: now - 120_000,
+  }
+
+  const variant = (id, angle) => ({
+    id, angle, title: `${angle} · 苹屿乌龙轻乳茶`, hookLine: '下午三点，眼皮开始打架', totalDurationSec: 30,
+    notes: '继承原片的共鸣开场 + 三段卖点特写 + 价格锚点收口',
+    segments: [
+      { index: 1, startSec: 0, endSec: 4, voiceover: '下午三点，眼皮开始打架', onscreenText: '下午三点', visualPrompt: '中景固定：办公桌前女生揉眼睛，窗外柔光，桌面文件散落', productPlacement: '无产品' },
+      { index: 2, startSec: 4, endSec: 8, voiceover: '同事递来这一杯，苹屿乌龙', onscreenText: '同事递来一杯', visualPrompt: '特写推镜：国风包装奶茶被推进画面，杯壁挂着水珠', productPlacement: '手持入画，特写包装' },
+      { index: 3, startSec: 8, endSec: 12, voiceover: '苹果配乌龙，居然这么搭', onscreenText: '苹果 + 乌龙', visualPrompt: '大特写：杯盖打开，苹果片与乌龙茶汤轻轻晃动', productPlacement: '产品开盖特写' },
+      { index: 4, startSec: 12, endSec: 16, voiceover: '三分甜，喝完不罪恶', onscreenText: '三分甜', visualPrompt: '中景移镜：女生喝一口，眼神亮起，背景窗光', productPlacement: '使用中' },
+      { index: 5, startSec: 16, endSec: 21, voiceover: '包装也长在审美上', onscreenText: '国风轻盈', visualPrompt: '特写摇镜：手指划过包装上的国风纹样', productPlacement: '细节特写' },
+      { index: 6, startSec: 21, endSec: 26, voiceover: '两杯才二十六', onscreenText: '两杯 26 元', visualPrompt: '中景推镜：两杯并排，价格标签自然入画', productPlacement: '双杯陈列' },
+      { index: 7, startSec: 26, endSec: 30, voiceover: '下午茶，选它', onscreenText: '下午茶 · 选它', visualPrompt: '全景固定：举杯对镜头示意，画面定格', productPlacement: '产品举杯收尾' },
+    ],
+  })
+
+  const RUN = {
+    id: 'run-1',
+    title: '苹屿乌龙轻乳茶 · 复刻',
+    createdAt: now - 3_600_000,
+    updatedAt: now - 20_000,
+    sourceUrl: 'https://v.douyin.com/abcdefg/',
+    variantId: 'A',
+    productBrief: '茉知味苹屿乌龙轻乳茶，卖点：国风轻乳茶、苹果+茉莉冷萃、下午茶解腻',
+    autoAdvance: true,
+    status: busy ? 'running' : 'idle',
+    steps: [
+      { id: 'parse', status: 'done', progress: 1, message: '已下载源视频' },
+      { id: 'analyze', status: 'done', progress: 1, message: '8 个镜头' },
+      { id: 'rewrite', status: 'done', progress: 1, message: '3 版脚本' },
+      { id: 'match', status: busy ? 'running' : 'done', progress: busy ? 0.42 : 1, message: busy ? '生成第 3/7 张参考图' : '4/7 张参考图' },
+      { id: 'generate', status: 'pending', progress: 0, message: '待执行' },
+      { id: 'compose', status: 'pending', progress: 0, message: '待执行' },
+    ],
+    source: { platform: 'douyin', provider: 'api', videoFile: 'source/source.mp4', title: '下午三点，同事递来的这一杯', author: '茉知味', durationSec: 31.4, width: 1080, height: 1920, fps: 30 },
+    productImages: [{ file: 'products/a.png', name: 'product-main.png', bytes: 240_000, createdAt: now - 600_000 }],
+    frames: [
+      { segmentIndex: 1, file: 'frames/ref-01.png', prompt: '……', mode: 'product', createdAt: now },
+      { segmentIndex: 2, file: 'frames/ref-02.png', prompt: '……', mode: 'product', createdAt: now },
+      { segmentIndex: 3, file: 'frames/ref-03.png', prompt: '……', mode: 'product', createdAt: now },
+      { segmentIndex: 4, file: '', prompt: '……', mode: 'product', error: '上游返回 429：请求过于频繁', createdAt: now },
+    ],
+    segments: [],
+    logs: [
+      { at: now - 180_000, step: 'run', level: 'info', text: '开始执行：parse（自动连续执行）' },
+      { at: now - 176_000, step: 'parse', level: 'info', text: '已解析：下午三点，同事递来的这一杯（抖音，api）' },
+      { at: now - 150_000, step: 'analyze', level: 'info', text: '拆解完成：8 个镜头，综合评分 8' },
+      { at: now - 120_000, step: 'rewrite', level: 'info', text: '生成 3 版脚本，推荐 A 版' },
+      { at: now - 40_000, step: 'match', level: 'warn', text: '第 4 张参考图生成失败：上游返回 429：请求过于频繁' },
+    ],
+    analysis: ANALYSIS,
+    scripts: { variants: [variant('A', '原片结构'), variant('B', '换钩子'), variant('C', '换视角')], recommendedId: 'A', productBrief: '', model: 'mimo-v2.5-pro', createdAt: now - 120_000 },
+  }
+
+  // 参考图用 canvas 生成的占位图（真实插件里是模型产出的关键帧）
+  function placeholder(seed, label) {
+    const canvas = document.createElement('canvas')
+    canvas.width = 360
+    canvas.height = 480
+    const ctx = canvas.getContext('2d')
+    const palettes = [['#f2e7d8', '#c8a06a'], ['#e6eef0', '#6b93a8'], ['#efe6ee', '#9a7bb0'], ['#eaeae4', '#8f9a7a']]
+    const [bg, fg] = palettes[seed % palettes.length]
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, 360, 480)
+    ctx.fillStyle = fg
+    ctx.globalAlpha = 0.22
+    ctx.beginPath()
+    ctx.arc(180 + (seed % 3) * 20, 230, 120, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.fillStyle = fg
+    ctx.fillRect(120, 300, 120, 26)
+    ctx.font = '600 18px "Microsoft YaHei", sans-serif'
+    ctx.fillStyle = '#2c2c2c'
+    ctx.fillText(label, 24, 56)
+    return canvas.toDataURL('image/png')
+  }
+
+  const frameUrls = {}
+  for (let index = 1; index <= 3; index += 1) {
+    frameUrls[index] = placeholder(index, `镜 ${index}`)
+  }
+
+  window.fetch = async (input, init) => {
+    const url = String(input)
+    let payload
+    if (url.includes('/runs')) payload = { ok: true, value: { runs: RUNS, busy: busy ? ['run-1'] : [] } }
+    else if (url.includes('/run?runId')) payload = { ok: true, value: { run: RUN, busy } }
+    else if (url.includes('/models')) payload = { ok: true, value: DSH_CATALOG }
+    else if (url.includes('/config/test')) payload = { ok: true, value: { ok: true, elapsedMs: 812, detail: '模型回复：可用' } }
+    else if (url.includes('/config')) payload = { ok: true, value: { config: CONFIG, secrets: { 'analyze.apiKey': true }, dataDir: 'C:/Users/Administrator/.dsh/storages/dsh-video-replica', ffmpegAvailable: true, ffprobeAvailable: true, ytDlpAvailable: true } }
+    else payload = { ok: true, value: {} }
+    return { ok: true, status: 200, json: async () => payload, text: async () => JSON.stringify(payload) }
+  }
+
+  // 媒体请求（图片/视频）走本地占位，避免 404 影响观感
+  const nativeFetch = window.fetch
+  window.fetch = async (input, init) => {
+    const url = String(input)
+    if (url.includes('/media?')) return { ok: true, status: 200, blob: async () => new Blob(), json: async () => ({}) }
+    return nativeFetch(input, init)
+  }
+
+  // 让 <img> 指向占位图：重写 mediaUrl 生成的 src
+  const observer = new MutationObserver(() => {
+    document.querySelectorAll('img[src*="/media?"]').forEach(img => {
+      const match = /path=frames%2Fref-(\d+)/.exec(img.src) || /path=frames\/ref-(\d+)/.exec(img.src)
+      if (match) {
+        const data = frameUrls[Number(match[1])]
+        if (data) img.src = data
+      } else if (img.src.includes('/media?')) {
+        img.src = placeholder(0, '')
+      }
+    })
+  })
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] })
+</script>
+
+<script src="../../lib/client.js"></script>
+<script>
+  const { apply } = window.__pluginExports
+  const sections = []
+  const ctx = {
+    effect: run => { const dispose = run(); return typeof dispose === 'function' ? dispose : () => {} },
+    get: () => undefined,
+    slots: {
+      inject: (_name, register) => register(),
+      register: (options, component) => { sections.push({ options, component }); return () => {} },
+    },
+    locale: { getLocale: () => ({ active: 'zh-CN' }), subscribe: () => () => {} },
+  }
+  apply(ctx)
+
+  // 打开工作台并切到指定步骤
+  requestAnimationFrame(() => {
+    document.querySelector('[data-dvr-entry]')?.click()
+    setTimeout(() => {
+      const stepMap = { input: null, analyze: 'analyze', rewrite: 'rewrite', match: 'match', generate: 'generate', compose: 'compose' }
+      const wanted = stepMap[stepParam]
+      if (stepParam === 'settings') {
+        // 直接把设置页渲染到中栏（预览专用）
+        const view = document.querySelector('[data-dvr-view]')
+        view.innerHTML = ''
+        const host = document.createElement('div')
+        host.className = 'vr-app'
+        host.innerHTML = '<div class="vr-main" style="padding:18px"><div class="vr-stage" id="settings-host"></div></div>'
+        view.append(host)
+        ReactDOM.createRoot(document.getElementById('settings-host')).render(React.createElement(sections[0].component))
+        return
+      }
+      // 先选中历史任务（会按当前进度自动选步骤），再切到目标步骤
+      if (stepParam !== 'input') document.querySelector('.vr-run')?.click()
+      setTimeout(() => {
+        if (!wanted) return
+        const labels = { analyze: 'AI 拆解', rewrite: 'AI 仿写', match: '参考图匹配', generate: 'AI 生成视频', compose: '合成成片' }
+        const steps = [...document.querySelectorAll('.vr-step')]
+        steps.find(step => step.textContent.includes(labels[wanted]))?.click()
+      }, 250)
+    }, 400)
+  })
+</script>
+</body>
+</html>

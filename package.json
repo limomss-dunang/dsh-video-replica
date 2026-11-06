@@ -1,0 +1,71 @@
+{
+  "name": "dsh-video-replica",
+  "version": "0.1.0",
+  "private": true,
+  "description": "爆款视频复刻：抖音/视频号/小红书链接 → 自动下载解析 → AI 拆解 → AI 仿写 → 产品参考图匹配分镜 → AI 生成分镜视频 → ffmpeg 合成成片（DeepSeek Harness plugin）",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "locale",
+    "icon.svg",
+    "README.md",
+    "docs"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "tsdown --watch --config tsdown.client.config.ts",
+    "typecheck": "tsc --noEmit",
+    "smoke:host": "node scripts/smoke-host.mjs",
+    "smoke:client": "node scripts/smoke-client.mjs",
+    "smoke": "node scripts/smoke-client.mjs && node scripts/smoke-host.mjs",
+    "preview": "python scripts/preview/shots.py",
+    "prepare": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "^18.3.5",
+    "jsdom": "25.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsdown": "^0.23.0",
+    "typescript": "~5.7.2"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugin",
+    "video",
+    "replica",
+    "douyin",
+    "xiaohongshu"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/limomss-dunang/dsh-video-replica.git"
+  },
+  "bugs": {
+    "url": "https://github.com/limomss-dunang/dsh-video-replica/issues"
+  },
+  "homepage": "https://github.com/limomss-dunang/dsh-video-replica#readme"
+}
