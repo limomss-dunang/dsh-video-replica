@@ -27,7 +27,9 @@
     "locale",
     "icon.svg",
     "README.md",
-    "docs"
+    "docs",
+    "CONTRIBUTING.md",
+    "SECURITY.md"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

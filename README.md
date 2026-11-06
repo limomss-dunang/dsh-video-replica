@@ -113,6 +113,12 @@ node scripts/install-local.mjs dsh-video-replica --profile desktop
 - API Key 只存在本机配置文件里，界面回读时是掩码（`••••••` + 末 4 位），留空保存不会覆盖。
 - 桥接接口只对本机回环 + 同源请求开放（远端浏览器访问会被 403 拒绝）。
 
+## 贡献与安全
+
+- 开发环境、命令、代码结构与发版流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+- 安全问题请**不要**开公开 issue，走 [SECURITY.md](SECURITY.md) 里的私密报告通道。
+- 本仓库运行时零第三方依赖；`devDependencies` 只用于构建与测试。
+
 ## 文档
 
 | 文档 | 内容 |
