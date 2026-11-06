@@ -1,11 +1,17 @@
 # dsh-video-replica · 爆款视频复刻工作台
 
+![CI](https://github.com/limomss-dunang/dsh-video-replica/actions/workflows/ci.yml/badge.svg)  ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
+
 DeepSeek Harness 插件。粘贴一条抖音 / 小红书 / 视频号分享链接（或直接上传视频），
 自动跑完「下载解析 → AI 拆解 → AI 仿写 → 产品参考图匹配 → AI 生成分镜视频 →
 ffmpeg 合成成片」六步，产出一条可直接发布的竖屏成片。
 
 流程参考 [LeadStageAI](https://www.hzdun.com/) 的六步管线；界面形态参考 dsh-imagegen
 的「侧边栏入口 + 中栏三栏工作台 + 设置页」。
+
+![工作台](docs/assets/workbench.jpg)
+
+![新建复刻](docs/assets/create.jpg)
 
 ```
 ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐

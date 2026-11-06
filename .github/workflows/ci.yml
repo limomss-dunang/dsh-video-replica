@@ -1,0 +1,31 @@
+﻿name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install dependencies (also builds lib/ via prepare)
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Client smoke
+        run: npm run smoke:client
+
+      - name: Host smoke (real ffmpeg + mock model gateway)
+        run: npm run smoke:host
