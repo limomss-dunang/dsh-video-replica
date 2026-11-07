@@ -20,6 +20,7 @@ export interface BrowserNodeLike {
   role: string
   name: string
   ref?: string
+  disabled?: boolean
   children: readonly BrowserNodeLike[]
 }
 
@@ -181,9 +182,14 @@ export async function waitForUpload(
     if (options.signal?.aborted === true) throw new Error('已停止')
     const snapshot = await session.snapshot(undefined, options.signal)
     if (hasText(snapshot, /上传完成|上传成功|视频已上传/)) return snapshot
+    if (hasText(snapshot, /上传失败|转码失败/)) throw new Error('平台提示上传/转码失败，请到浏览器窗口查看')
+    // 另一种完成信号：「发表」按钮从 disabled 变成可点。
+    const submit = findNode(snapshot, ['button'], /发表|发布/)
+    if (submit !== undefined && submit.disabled !== true && submit.ref !== undefined) return snapshot
     if (Date.now() > deadline) throw new Error('等待视频上传超时，请到浏览器窗口里看看上传进度')
     if (Date.now() - lastNote > 20_000) {
-      options.log('info', '视频上传中…')
+      const percent = snapshotText(snapshot).match(/(\d{1,3})\s*%/)?.[1]
+      options.log('info', percent === undefined ? '视频上传中…' : `视频上传中… ${percent}%`)
       lastNote = Date.now()
     }
     await session.wait(3000, options.signal)
@@ -216,9 +222,17 @@ export async function submitPost(
     await session.clickText('发表', options.signal)
   }
   const deadline = Date.now() + 120_000
+  let confirmed = false
   for (;;) {
     if (options.signal?.aborted === true) throw new Error('已停止')
     const snapshot = await session.snapshot(undefined, options.signal)
+    // 有些版本会弹「确认发表」二次确认框。
+    const confirm = findNode(snapshot, ['button'], /^(确认|确定|继续发表)$/)
+    if (!confirmed && confirm?.ref !== undefined) {
+      await session.click(confirm.ref, options.signal)
+      confirmed = true
+      continue
+    }
     const text = snapshotText(snapshot)
     if (/发表成功|发布成功/.test(text) || /\/platform\/post\/(list|success)/.test(snapshot.url)) {
       return snapshot.url
