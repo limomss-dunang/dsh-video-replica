@@ -81,6 +81,15 @@ export interface PipelineContext {
   log: (step: StepId | 'run', level: 'info' | 'warn' | 'error', text: string) => void
 }
 
+/** 把所有角色拼成一句用于「角色锁定」的身份描述。 */
+function subjectIdentityForPrompt(run: RunState): string {
+  const subjects = run.subjects ?? []
+  if (subjects.length > 0) {
+    return subjects.map(item => `${item.name}：${item.description}`).join('；')
+  }
+  return (run.analysis?.subjectIdentity ?? '').trim()
+}
+
 function dirOf(ctx: PipelineContext): string {
   return ctx.store.runDir(ctx.run.id)
 }
@@ -275,6 +284,13 @@ function normalizeAnalysis(raw: Record<string, unknown>, options: {
   const scores = asRecord(raw.scores)
   const score = (key: string): number => clamp(Math.round(asNumber(scores[key], 6)), 0, 10)
   const dna = asArray(raw.dna).map(item => asString(item)).filter(item => item !== '')
+  const characters = asArray(raw.characters)
+    .map(item => {
+      const row = asRecord(item)
+      return { name: asString(row.name, '').trim(), identity: asString(row.identity ?? row.description, '').trim() }
+    })
+    .filter(item => item.name !== '' && item.identity !== '')
+    .slice(0, 3)
   const occasionRaw = asRecord(raw.occasion)
   const occasionName = asString(occasionRaw.name ?? raw.occasion, '').trim()
   const occasionWhy = asString(occasionRaw.why ?? occasionRaw.reason, '').trim()
@@ -296,6 +312,7 @@ function normalizeAnalysis(raw: Record<string, unknown>, options: {
     ...(asString(raw.subjectIdentity ?? raw.subject_identity, '').trim() === ''
       ? {}
       : { subjectIdentity: asString(raw.subjectIdentity ?? raw.subject_identity, '').trim() }),
+    ...(characters.length === 0 ? {} : { characters }),
     ...(occasionName === '' ? {} : { occasion: { name: occasionName, why: occasionWhy } }),
     hook: {
       type: asString(hook.type, ''),
@@ -712,45 +729,54 @@ export async function stepMatch(ctx: PipelineContext): Promise<void> {
     : `${run.analysis.meta.style}${run.analysis.style.palette.length > 0 ? `，主色调 ${run.analysis.style.palette.slice(0, 3).join('/')}` : ''}${run.analysis.style.colorGrade === '' ? '' : `，${run.analysis.style.colorGrade}`}`
 
 
-  // 纯复刻（没有产品图）时，先生成「角色锚点」：一张角色设定图，各镜首帧都以它为参考，
-  // 否则每个分镜都会用文生图凭空造一个长得不一样的主角。
-  const subjectIdentity = run.analysis?.subjectIdentity?.trim()
-    ?? (run.analysis === undefined ? '' : `${run.analysis.style.subject}；${run.analysis.coreIdea}`)
+  // 纯复刻（没有产品图）时，先为每个角色生成一张「角色锚点」：各镜首帧都以它们为参考，
+  // 否则每个分镜都会用文生图凭空造一个长得不一样的主角（多角色时尤其明显）。
   const pureReplica = run.productImages.length === 0
-  if (pureReplica && subjectIdentity !== '' && run.subject === undefined) {
-    const anchorFile = 'subject/anchor.png'
-    ctx.log('match', 'info', `生成角色锚点：${subjectIdentity.slice(0, 60)}`)
-    ctx.setStep('match', { progress: 0.05, message: '生成角色锚点（保证每镜同一个角色）' })
-    touch(ctx)
-    try {
-      const imageEndpoint = await resolveEndpoint(ctx.dsh, config.image, '角色锚点')
-      await generateImage({
-        apiUrl: imageEndpoint.apiUrl,
-        apiKey: imageEndpoint.apiKey,
-        model: imageEndpoint.model,
-        protocol: imageEndpoint.fromDsh ? 'openai-images' : config.image.protocol,
-        ...(config.image.extraJson === undefined ? {} : { extraJson: config.image.extraJson }),
-        ...(config.image.timeoutSec === undefined ? {} : { timeoutSec: config.image.timeoutSec }),
-        prompt: `角色设定图：${subjectIdentity}。单个角色正面半身、正对镜头，完整清晰展现外形特征（毛色/花纹/眼睛/体型/配饰）；纯色干净背景，中性柔和光，画面里只有一个角色，无文字、无字幕、无 Logo，不要拼图、不要多视角排版。`,
-        aspect: ratioOf(`${aspect.width}x${aspect.height}`),
-        width: aspect.width,
-        height: aspect.height,
-        outFile: abs(ctx, anchorFile),
-        label: '角色锚点',
-        ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
-      })
-      run.subject = { description: subjectIdentity, anchorFile, createdAt: Date.now() }
+  const characters = (run.analysis?.characters !== undefined && run.analysis.characters.length > 0
+    ? run.analysis.characters
+    : (run.analysis?.subjectIdentity ?? '').trim() === ''
+      ? []
+      : [{ name: '主角', identity: run.analysis?.subjectIdentity ?? '' }])
+    .filter(item => item.identity.trim() !== '')
+    .slice(0, 3)
+  if (pureReplica && characters.length > 0) {
+    run.subjects = run.subjects ?? []
+    for (const [index, character] of characters.entries()) {
+      if (run.subjects.some(item => item.name === character.name)) continue
+      const anchorFile = `subject/anchor-${index + 1}.png`
+      ctx.log('match', 'info', `生成角色锚点「${character.name}」：${character.identity.slice(0, 50)}`)
+      ctx.setStep('match', { progress: 0.03, message: `生成角色锚点 ${index + 1}/${characters.length}（${character.name}）` })
       touch(ctx)
-    } catch (error) {
-      ctx.log('match', 'warn', `角色锚点生成失败（不影响流程，但各镜角色可能不一致）：${messageOf(error).slice(0, 160)}`)
+      try {
+        const imageEndpoint = await resolveEndpoint(ctx.dsh, config.image, `角色锚点 ${character.name}`)
+        await generateImage({
+          apiUrl: imageEndpoint.apiUrl,
+          apiKey: imageEndpoint.apiKey,
+          model: imageEndpoint.model,
+          protocol: imageEndpoint.fromDsh ? 'openai-images' : config.image.protocol,
+          ...(config.image.extraJson === undefined ? {} : { extraJson: config.image.extraJson }),
+          ...(config.image.timeoutSec === undefined ? {} : { timeoutSec: config.image.timeoutSec }),
+          prompt: `角色设定图：${character.identity}。单个角色正面半身、正对镜头，完整清晰展现外形特征（毛色/花纹/眼睛/体型/配饰）；纯色干净背景，中性柔和光，画面里只有一个角色，无文字、无字幕、无 Logo，不要拼图、不要多视角排版。`,
+          aspect: ratioOf(`${aspect.width}x${aspect.height}`),
+          width: aspect.width,
+          height: aspect.height,
+          outFile: abs(ctx, anchorFile),
+          label: `角色锚点 ${character.name}`,
+          ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+        })
+        run.subjects.push({ name: character.name, description: character.identity, anchorFile, createdAt: Date.now() })
+        touch(ctx)
+      } catch (error) {
+        ctx.log('match', 'warn', `角色锚点「${character.name}」生成失败（不影响流程，但该角色可能不一致）：${messageOf(error).slice(0, 160)}`)
+      }
     }
   }
-  const subjectAnchor = run.subject === undefined
-    ? undefined
-    : { description: run.subject.description, hasImage: true }
-  const subjectImage = run.subject === undefined
-    ? undefined
-    : await loadImage(abs(ctx, run.subject.anchorFile)).catch(() => undefined)
+  const subjectAnchors = (run.subjects ?? []).map(item => ({ name: item.name, description: item.description }))
+  const subjectImages: ChatImage[] = []
+  for (const item of run.subjects ?? []) {
+    const image = await loadImage(abs(ctx, item.anchorFile)).catch(() => undefined)
+    if (image !== undefined) subjectImages.push(image)
+  }
 
   const lightingBaseline = run.analysis?.shots.find(shot => shot.lighting.trim() !== '')?.lighting ?? ''
   const frames: StoryboardFrame[] = []
@@ -892,9 +918,7 @@ export function buildPromptPreview(run: RunState, config: PluginConfig): {
         includeProductImage,
         productVisual: run.productVisual ?? '',
         styleHint,
-        ...(run.subject === undefined && run.analysis?.subjectIdentity === undefined
-          ? {}
-          : { subjectIdentity: run.subject?.description ?? run.analysis?.subjectIdentity ?? '' }),
+        ...(subjectIdentityForPrompt(run) === '' ? {} : { subjectIdentity: subjectIdentityForPrompt(run) }),
         continuation: chunk.index > 1
             && chunk.shots[0]?.index === buildChunks(variant.segments)[chunk.index - 2]?.shots.at(-1)?.index,
         aspect,
@@ -1062,9 +1086,7 @@ export async function stepGenerate(ctx: PipelineContext): Promise<void> {
       includeProductImage,
       productVisual: run.productVisual ?? '',
       styleHint,
-      ...(run.subject === undefined && run.analysis?.subjectIdentity === undefined
-        ? {}
-        : { subjectIdentity: run.subject?.description ?? run.analysis?.subjectIdentity ?? '' }),
+      ...(subjectIdentityForPrompt(run) === '' ? {} : { subjectIdentity: subjectIdentityForPrompt(run) }),
       continuation: chunk.index > 1
             && chunk.shots[0]?.index === buildChunks(variant.segments)[chunk.index - 2]?.shots.at(-1)?.index,
       aspect,
@@ -1726,6 +1748,12 @@ export async function regenerateFrame(ctx: PipelineContext, segmentIndex: number
     }
   }
   const aspect = resolveAspect(run, config)
+  const subjectAnchors = (run.subjects ?? []).map(item => ({ name: item.name, description: item.description }))
+  const subjectImages: ChatImage[] = []
+  for (const item of run.subjects ?? []) {
+    const image = await loadImage(abs(ctx, item.anchorFile)).catch(() => undefined)
+    if (image !== undefined) subjectImages.push(image)
+  }
   const sourceShot = run.analysis?.shots.find(shot => shot.index === segment.index)
   const lightingBaseline = run.analysis?.shots.find(shot => shot.lighting.trim() !== '')?.lighting ?? ''
   const prompt = promptOverride !== undefined && promptOverride.trim() !== ''
@@ -1746,6 +1774,7 @@ export async function regenerateFrame(ctx: PipelineContext, segmentIndex: number
         styleHint: run.analysis?.meta.style ?? '',
         frameStyle: config.imageFrameStyle,
         ...(lightingBaseline === '' ? {} : { lightingBaseline }),
+        ...(subjectAnchors.length === 0 ? {} : { subjectAnchors }),
       })
   const file = `frames/ref-${pad2(segmentIndex)}.png`
   const imageEndpoint = await resolveEndpoint(ctx.dsh, config.image, `参考图 ${segmentIndex}`)
@@ -1757,7 +1786,9 @@ export async function regenerateFrame(ctx: PipelineContext, segmentIndex: number
     ...(config.image.extraJson === undefined ? {} : { extraJson: config.image.extraJson }),
     ...(config.image.timeoutSec === undefined ? {} : { timeoutSec: config.image.timeoutSec }),
     prompt,
-    ...(productImages.length === 0 ? {} : { images: productImages }),
+    ...(productImages.length === 0
+      ? (subjectImages.length === 0 ? {} : { images: subjectImages })
+      : { images: productImages }),
     aspect: ratioOf(`${aspect.width}x${aspect.height}`),
     width: aspect.width,
     height: aspect.height,

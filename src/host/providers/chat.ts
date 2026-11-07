@@ -146,13 +146,26 @@ export async function loadImage(
   const { spawn } = await import('node:child_process')
   const bytes = new Uint8Array(await readFile(file))
   const lower = file.toLowerCase()
-  const mediaType = lower.endsWith('.png')
-    ? 'image/png'
-    : lower.endsWith('.webp')
-      ? 'image/webp'
-      : lower.endsWith('.gif')
-        ? 'image/gif'
-        : 'image/jpeg'
+  // 按文件头判断真实格式：生成网关常把 JPEG 字节写进 .png 的文件名，
+  // 若按扩展名上报 MIME，上游（尤其 multipart /images/edits）会拒收或行为异常。
+  const sniffed = bytes[0] === 0xff && bytes[1] === 0xd8
+    ? 'image/jpeg'
+    : bytes[0] === 0x89 && bytes[1] === 0x50
+      ? 'image/png'
+      : bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57 && bytes[9] === 0x45
+        ? 'image/webp'
+        : bytes[0] === 0x47 && bytes[1] === 0x49
+          ? 'image/gif'
+          : ''
+  const mediaType = sniffed !== ''
+    ? sniffed
+    : lower.endsWith('.png')
+      ? 'image/png'
+      : lower.endsWith('.webp')
+        ? 'image/webp'
+        : lower.endsWith('.gif')
+          ? 'image/gif'
+          : 'image/jpeg'
 
   const limit = options.maxBytes ?? 900_000
   if (bytes.length <= limit) return { bytes, mediaType }

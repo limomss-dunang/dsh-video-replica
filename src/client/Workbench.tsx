@@ -1404,33 +1404,37 @@ function StageMatch(props: StageMatchProps): JSX.Element {
     <>
       <StageHeader title={STEP_LABELS.match} step={props.step} onRun={props.onRun} busy={props.busy} />
       <PromptPreview api={props.api} runId={props.run.id} stage="match" />
-      {props.run.subject !== undefined && (
+      {((props.run.subjects ?? []).length > 0 || props.run.subject !== undefined) && (
         <Card title="角色锚点（保证每个分镜是同一个角色）">
-          <div className="vr-row" style={{ gap: 12, alignItems: 'flex-start' }}>
-            <img
-              className="vr-zoomable"
-              src={mediaUrl(props.run.id, props.run.subject.anchorFile, { version: props.run.subject.createdAt })}
-              alt="subject anchor"
-              style={{ width: 140, borderRadius: 10 }}
-              loading="lazy"
-              onClick={() => setZoom({
-                src: mediaUrl(props.run.id, props.run.subject?.anchorFile ?? '', { version: props.run.subject?.createdAt }),
-                caption: '角色锚点 · 全片角色设定图',
-              })}
-            />
-            <div style={{ flex: 1 }}>
-              <p className="vr-hint" style={{ marginTop: 0 }}>{props.run.subject.description}</p>
-              <button
-                type="button"
-                className="vr-btn"
-                data-size="sm"
-                disabled={props.busy}
-                onClick={() => props.onResetAnchor()}
-              >
-                {tt('regenerate')}（会清空参考图）
-              </button>
-            </div>
+          <div className="vr-frames">
+            {(props.run.subjects ?? (props.run.subject === undefined
+              ? []
+              : [{ name: '主角', description: props.run.subject.description, anchorFile: props.run.subject.anchorFile, createdAt: props.run.subject.createdAt }]))
+              .map(item => (
+                <figure className="vr-frame" key={item.anchorFile} style={{ aspectRatio: '3/4' }}>
+                  <img
+                    className="vr-zoomable"
+                    src={mediaUrl(props.run.id, item.anchorFile, { version: item.createdAt })}
+                    alt={`anchor-${item.name}`}
+                    loading="lazy"
+                    onClick={() => setZoom({ src: mediaUrl(props.run.id, item.anchorFile, { version: item.createdAt }), caption: `角色锚点 · ${item.name}` })}
+                  />
+                  <figcaption>{item.name}</figcaption>
+                </figure>
+              ))}
           </div>
+          <p className="vr-hint" style={{ marginTop: 8 }}>
+            {(props.run.subjects ?? []).map(item => `${item.name}：${item.description}`).join('；')}
+          </p>
+          <button
+            type="button"
+            className="vr-btn"
+            data-size="sm"
+            disabled={props.busy}
+            onClick={() => props.onResetAnchor()}
+          >
+            {tt('regenerate')}（会清空所有参考图）
+          </button>
         </Card>
       )}
       <p className="vr-hint">{tt('refFramesTip')}</p>

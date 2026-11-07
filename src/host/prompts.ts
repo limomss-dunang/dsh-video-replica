@@ -103,9 +103,11 @@ ${transcript}
 11. whyItWorks：为什么成立 —— 预期如何被违背（指令→字面结果→人类的无奈接受）、情绪节奏怎么走、观众代入点在哪。
 11.1 **只有当口播/画面文字里真的存在「被字面执行的词」时**，才在 creativeDevice 里写清这层语言歧义（例：「蛐蛐=议论」被错听成虫子、「尖子生=头发尖」被画成尖头）。没有这类词就不要硬套，更不要为了套模板编造不存在的信息。
 12. dna：3~6 条「这条视频靠什么爆」的**手法**，每条一句话且必须能迁移到完全不同的题材。禁止写具体角色/道具/场景（写「动物当创作者替身」，不要写「橘猫打字」）。
-12.5 subjectIdentity（主角外形身份证，**必填**）：用 30–60 个汉字写清画面里**最主要的那个角色/主体**的可视特征——物种或身份、毛色/肤色/材质、花纹分布（如「耳尖、尾巴末端是深色」）、眼睛颜色、体型、标志性配饰或穿着。
-   - 这份描述会被用来生成角色设定图，并逐镜锁定同一个角色；所以要写**具体、可复现**的特征，不要写「一只可爱的猫」这种泛化描述。
-   - 多个角色时只写最主要那个，其余在 coreIdea 里说明。
+12.5 characters（角色清单，**必填**）：列出画面里出现、且需要逐镜保持一致的**每一个**主要角色（1–3 个），每个写：
+   - name：称呼，用画面能区分的短名（「橘猫」「灰猫」「店主」「小男孩」）；
+   - identity：30–60 个汉字的外形身份证——物种或身份、毛色/肤色/材质、花纹分布（如「白色胸口与四爪、耳尖深色」）、眼睛颜色、体型、标志性配饰或穿着。
+   - 例：一个橘猫 + 一个灰猫同框时，必须写两条，不能只写一条。写**具体、可复现**的特征，不要写「一只可爱的猫」。
+12.6 subjectIdentity（兼容字段）：等于 characters 第一条的 identity。
 14. occasion（节令/时效钩子，**必填字段，没有就写空对象**）：这条片子是不是靠「时间点」才成立？
    - 如果是：写 {"name": "节令或热点名（例：万圣节/春节/开学季/双11/世界杯）", "why": "为什么必须在这个时间点发才有流量（一句话）"}。
    - 例子：万圣节萌宠装扮上门讨糖 → 观众当天正在过节，装扮+讨糖话术直接命中节日情绪。
@@ -132,7 +134,8 @@ ${transcript}
   ],
   "rhythm": {"avgShotSec": 2.5, "beatPattern": "节奏描述", "cutPoints": [3.2, 6.8]},
   "style": {"palette": ["主色", "辅色"], "typography": "字幕排版", "music": "音乐风格", "colorGrade": "调色", "subject": "画面主体"},
-  "subjectIdentity": "主角外形身份证（30–60 字，具体到毛色/花纹/眼睛/体型/配饰）",
+  "characters": [{"name": "橘猫", "identity": "外形身份证（30–60 字，具体到毛色/花纹/眼睛/体型/配饰）"}],
+  "subjectIdentity": "同 characters[0].identity",
   "occasion": {"name": "节令/热点名，没有就写空字符串", "why": "为什么必须在这个时间点发"},
   "dna": ["可复用套路 1", "可复用套路 2"],
   "scores": {"hook": 8, "retention": 7, "conversion": 6, "overall": 7}
@@ -327,8 +330,8 @@ export function framePrompt(options: {
    * 方舟只信任 Seedream **文生图**产物，图生图产物会被判「疑似真实人物」。
    */
   productMode?: 'reference' | 'text'
-  /** 角色锚点：纯复刻时先有一张角色设定图，各镜首帧以它为参考。 */
-  subjectAnchor?: { description: string, hasImage: boolean }
+  /** 角色锚点：纯复刻时为每个角色各有一张设定图，各镜首帧以它们为参考（按数组顺序对应图片1..N）。 */
+  subjectAnchors?: Array<{ name: string, description: string }>
 }): string {
   const textMode = options.productMode === 'text'
   const style = FRAME_STYLES[options.frameStyle ?? 'photo'] ?? FRAME_STYLES.photo
@@ -338,11 +341,17 @@ export function framePrompt(options: {
   const environment = clean(options.segment.environment ?? '')
 
   const placement = options.segment.productPlacement.trim() === '' ? '自然出现在画面里，与主体动作产生关系' : options.segment.productPlacement.trim()
-  const subject = options.subjectAnchor === undefined
+  const anchors = options.subjectAnchors ?? []
+const subject = anchors.length === 0
   ? ''
-  : options.subjectAnchor.hasImage
-    ? `\n[角色锚定] 图片${options.hasProduct ? 2 : 1} 是同一个角色的设定图。画面里的主角必须与它**完全一致**：同样的物种/身份、毛色与花纹分布、眼睛颜色、体型比例、配饰与穿着；只改变姿态、动作、场景与光线。不要换品种、不要改毛色、不要换配饰。角色外形身份证：${clean(options.subjectAnchor.description)}。`
-    : `\n[角色锁定] 主角外形必须与全片一致（同一个角色）：${clean(options.subjectAnchor.description)}；只改变姿态、动作、场景与光线。`
+  : (() => {
+      const offset = options.hasProduct ? 1 : 0
+      const lines = anchors
+        .map((anchor, index) => `图片${index + 1 + offset} =「${anchor.name}」的角色设定图：${clean(anchor.description)}`)
+        .join('；');
+      const names = anchors.map(anchor => `「${anchor.name}」`).join('、')
+      return `\n[角色锚定] ${lines}。画面里出现的每个角色都必须与对应设定图**完全一致**：同样的物种/身份、毛色与花纹分布、眼睛颜色、体型比例、配饰与穿着；只改变姿态、动作、场景与光线。不要换品种、不要改毛色、不要换配饰、不要少人。本镜必须出现的角色：${names}。`
+    })()
 const material = !options.hasProduct
     ? '\n[素材] 无产品参考图：画面中不出现任何品牌 Logo、广告文字或包装文字。'
     : textMode
@@ -401,7 +410,7 @@ export function videoPrompt(options: {
   const usesProductImage = options.hasProduct && (options.includeProductImage ?? true)
   const subjectLock = options.subjectIdentity === undefined || options.subjectIdentity.trim() === ''
     ? ''
-    : `\n[角色锁定] 全片只有一个主角：${clean(options.subjectIdentity)}。每一镜的角色外形（物种/毛色/花纹/眼睛/体型/配饰）必须与首帧完全一致，不得换品种、换毛色、换配饰；只随剧情改变姿态、表情与场景。`
+    : `\n[角色锁定] 全片必须固定这几个角色：${clean(options.subjectIdentity)}。每一镜里这些角色的外形（物种/毛色/花纹/眼睛/体型/配饰）必须与首帧完全一致，不得换品种、换毛色、换配饰，也不得凭空多出或少掉角色；只随剧情改变姿态、表情与场景。`
   const baseline = clean(options.lightingBaseline ?? '')
 
   const shotLines = options.shots

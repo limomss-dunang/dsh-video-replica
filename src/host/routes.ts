@@ -11,7 +11,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createReadStream } from 'node:fs'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, join, normalize, sep } from 'node:path'
 import type { ConfigView, RunState, StepId } from '../shared/types.ts'
 import { API, STEP_IDS } from '../shared/types.ts'
@@ -132,7 +132,20 @@ async function serveFile(req: IncomingMessage, res: ServerResponse, file: string
     writeJson(res, 404, { ok: false, error: '文件不存在' })
     return
   }
-  const type = contentTypeOf(file)
+  let type = contentTypeOf(file)
+  if (type.startsWith('image/')) {
+    // 文件头优先：生成网关常把 JPEG 字节写成 .png，按扩展名上报会被浏览器/播放器误判。
+    const handle = await open(file, 'r')
+    try {
+      const head = Buffer.alloc(12)
+      await handle.read(head, 0, 12, 0)
+      if (head[0] === 0xff && head[1] === 0xd8) type = 'image/jpeg'
+      else if (head[0] === 0x89 && head[1] === 0x50) type = 'image/png'
+      else if (head[0] === 0x52 && head[8] === 0x57) type = 'image/webp'
+    } finally {
+      await handle.close()
+    }
+  }
   const inline = type.startsWith('video/') || type.startsWith('image/') || type.startsWith('audio/')
   const headers: Record<string, string> = {
     'content-type': type,
@@ -504,6 +517,7 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
       case 'reset-anchor': {
         // 角色锚点重生成：清掉锚点与所有参考图，下一步重跑「参考图匹配」会重新生成。
         run.subject = undefined
+        run.subjects = []
         run.frames = []
         await store.flush(runId)
         break

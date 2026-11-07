@@ -151,6 +151,8 @@ export interface AnalysisReport {
   summary: string
   /** 主角外形身份证（物种/毛色/花纹/眼睛/体型/配饰），用于角色锚点与逐镜一致性。 */
   subjectIdentity?: string
+  /** 需要锁定的角色清单（1–3 个）；每个角色一张锚点图，逐镜保持一致。 */
+  characters?: Array<{ name: string, identity: string }>
   /**
    * 节令/时效钩子：这条片子必须在这个时间点发才成立的原因。
    * 例：万圣节（临近节日，萌宠装扮讨糖）／春节／开学季／双11／热点事件。
@@ -389,6 +391,8 @@ export interface RunState {
   aspectRatio?: AspectRatio
   /** 角色锚点：纯复刻时先生成一张角色设定图，后续每个分镜都以它为参考，保证同一个角色。 */
   subject?: { description: string, anchorFile: string, createdAt: number }
+  /** 多角色锚点：每个需要锁定的角色各一张设定图。 */
+  subjects?: Array<{ name: string, description: string, anchorFile: string, createdAt: number }>
   /** 第七步：一键发布的运行状态。 */
   publish?: PublishState
   /** 本次仿写方式覆盖（不填则用设置里的全局默认）。 */
