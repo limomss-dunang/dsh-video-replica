@@ -264,6 +264,24 @@ function inferOccasion(analysis: AnalysisReport): { name: string, why: string } 
   return { name: hit.name, why: '从拆解的创意核心/台词里识别到节令或时效线索' }
 }
 
+const LENS_PATTERNS: Array<{ pattern: RegExp, text: string }> = [
+  { pattern: /鱼眼|fisheye/i, text: '鱼眼超广角镜头（门禁/猫眼视角），画面四角桶形畸变、中心放大' },
+  { pattern: /门禁|门铃|可视对讲|猫眼/, text: '门禁摄像头视角，广角略带畸变，机位在门框高度' },
+  { pattern: /监控|摄像头|机位/, text: '固定监控机位视角，广角略畸变' },
+  { pattern: /第一人称|pov|主观视角/i, text: '第一人称主观视角' },
+  { pattern: /俯拍/, text: '高机位俯拍' },
+]
+
+/** 从拆解文本推断镜头语言（模型没给 lens 时兜底）。 */
+function inferLens(analysis: AnalysisReport): string {
+  const declared = (analysis.meta.lens ?? '').trim()
+  if (declared !== '') return declared
+  const corpus = [analysis.coreIdea, analysis.summary, analysis.hook.text, analysis.creativeDevice,
+    ...analysis.shots.map(shot => `${shot.visual} ${shot.camera}`)].join(' ')
+  const hit = LENS_PATTERNS.find(item => item.pattern.test(corpus))
+  return hit === undefined ? '' : hit.text
+}
+
 function normalizeAnalysis(raw: Record<string, unknown>, options: {
   durationSec: number
   width: number
@@ -306,6 +324,7 @@ function normalizeAnalysis(raw: Record<string, unknown>, options: {
       resolution: `${options.width}x${options.height}`,
       fps: options.fps,
       style: asString(raw.visualStyle ?? raw.videoType, '实拍写实'),
+      ...(asString(raw.lens, '').trim() === '' ? {} : { lens: asString(raw.lens, '').trim() }),
       pacing: asString(rhythm.beatPattern, ''),
     },
     summary: asString(raw.summary, ''),
@@ -584,6 +603,16 @@ export async function stepRewrite(ctx: PipelineContext): Promise<void> {
   ctx.setStep('rewrite', { status: 'running', progress: 0.1, message: '准备仿写', startedAt: Date.now(), error: undefined })
   touch(ctx)
 
+  // 镜头语言兜底：老拆解没有 lens 时从画面/创意文本里识别（鱼眼、门禁、监控…）。
+  if ((run.analysis.meta.lens ?? '') === '') {
+    const lens = inferLens(run.analysis)
+    if (lens !== '') {
+      run.analysis.meta.lens = lens
+      ctx.log('rewrite', 'info', `识别到镜头语言：${lens}`)
+      touch(ctx)
+    }
+  }
+
   // 节令兜底：老拆解可能没有 occasion 字段，从文本里识别一次并写回，避免仿写把节日弄丢。
   if (run.analysis.occasion === undefined) {
     const inferred = inferOccasion(run.analysis)
@@ -721,6 +750,15 @@ export async function stepMatch(ctx: PipelineContext): Promise<void> {
       productImages.push(await loadImage(abs(ctx, image.file)))
     } catch {
       // 单张产品图读不到就跳过
+    }
+  }
+  // 镜头语言兜底：老拆解没有 lens 时从画面文本里识别（鱼眼/门禁/监控…），保证首帧视角一致。
+  if (run.analysis !== undefined && (run.analysis.meta.lens ?? '') === '') {
+    const lens = inferLens(run.analysis)
+    if (lens !== '') {
+      run.analysis.meta.lens = lens
+      ctx.log('match', 'info', `识别到镜头语言：${lens}`)
+      touch(ctx)
     }
   }
   const aspect = resolveAspect(run, config)
@@ -919,6 +957,8 @@ export function buildPromptPreview(run: RunState, config: PluginConfig): {
         productVisual: run.productVisual ?? '',
         styleHint,
         ...(subjectIdentityForPrompt(run) === '' ? {} : { subjectIdentity: subjectIdentityForPrompt(run) }),
+      ...(run.analysis?.meta.lens === undefined || run.analysis.meta.lens.trim() === '' ? {} : { lens: run.analysis.meta.lens }),
+        ...(run.analysis?.meta.lens === undefined || run.analysis.meta.lens.trim() === '' ? {} : { lens: run.analysis.meta.lens }),
         continuation: chunk.index > 1
             && chunk.shots[0]?.index === buildChunks(variant.segments)[chunk.index - 2]?.shots.at(-1)?.index,
         aspect,
@@ -1087,6 +1127,7 @@ export async function stepGenerate(ctx: PipelineContext): Promise<void> {
       productVisual: run.productVisual ?? '',
       styleHint,
       ...(subjectIdentityForPrompt(run) === '' ? {} : { subjectIdentity: subjectIdentityForPrompt(run) }),
+      ...(run.analysis?.meta.lens === undefined || run.analysis.meta.lens.trim() === '' ? {} : { lens: run.analysis.meta.lens }),
       continuation: chunk.index > 1
             && chunk.shots[0]?.index === buildChunks(variant.segments)[chunk.index - 2]?.shots.at(-1)?.index,
       aspect,
@@ -1747,6 +1788,10 @@ export async function regenerateFrame(ctx: PipelineContext, segmentIndex: number
       // 忽略
     }
   }
+  if (run.analysis !== undefined && (run.analysis.meta.lens ?? '') === '') {
+    const lens = inferLens(run.analysis)
+    if (lens !== '') run.analysis.meta.lens = lens
+  }
   const aspect = resolveAspect(run, config)
   const subjectAnchors = (run.subjects ?? []).map(item => ({ name: item.name, description: item.description }))
   const subjectImages: ChatImage[] = []
@@ -1775,6 +1820,7 @@ export async function regenerateFrame(ctx: PipelineContext, segmentIndex: number
         frameStyle: config.imageFrameStyle,
         ...(lightingBaseline === '' ? {} : { lightingBaseline }),
         ...(subjectAnchors.length === 0 ? {} : { subjectAnchors }),
+        ...(run.analysis?.meta.lens === undefined || run.analysis.meta.lens.trim() === '' ? {} : { lens: run.analysis.meta.lens }),
       })
   const file = `frames/ref-${pad2(segmentIndex)}.png`
   const imageEndpoint = await resolveEndpoint(ctx.dsh, config.image, `参考图 ${segmentIndex}`)

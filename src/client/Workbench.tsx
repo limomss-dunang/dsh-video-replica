@@ -1070,6 +1070,9 @@ function StageAnalysis(props: { run: RunState, step: StepState, onRun: () => voi
                   {analysis.occasion !== undefined && (
                     <Pill tone="ok">节令：{analysis.occasion.name}</Pill>
                   )}
+                  {analysis.meta.lens !== undefined && analysis.meta.lens.trim() !== '' && (
+                    <Pill tone="brand">镜头：{analysis.meta.lens}</Pill>
+                  )}
                 </div>
                 {analysis.occasion !== undefined && (
                   <p className="vr-hint">时效钩子：{analysis.occasion.why}</p>

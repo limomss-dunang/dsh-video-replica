@@ -103,6 +103,7 @@ ${transcript}
 11. whyItWorks：为什么成立 —— 预期如何被违背（指令→字面结果→人类的无奈接受）、情绪节奏怎么走、观众代入点在哪。
 11.1 **只有当口播/画面文字里真的存在「被字面执行的词」时**，才在 creativeDevice 里写清这层语言歧义（例：「蛐蛐=议论」被错听成虫子、「尖子生=头发尖」被画成尖头）。没有这类词就不要硬套，更不要为了套模板编造不存在的信息。
 12. dna：3~6 条「这条视频靠什么爆」的**手法**，每条一句话且必须能迁移到完全不同的题材。禁止写具体角色/道具/场景（写「动物当创作者替身」，不要写「橘猫打字」）。
+12.4 lens（镜头语言/视角，**必填字段**）：这条片子有没有固定的镜头语言？例如「鱼眼超广角 + 门禁摄像头视角，画面四角明显桶形畸变」「监控机位俯拍」「第一人称手持」「手机竖屏前置」。有一点就要写具体（含畸变/机位高度/焦段感），没有就写空字符串。这个字段会被逐镜复用，决定观众看到的是不是同一个「眼睛」。
 12.5 characters（角色清单，**必填**）：列出画面里出现、且需要逐镜保持一致的**每一个**主要角色（1–3 个），每个写：
    - name：称呼，用画面能区分的短名（「橘猫」「灰猫」「店主」「小男孩」）；
    - identity：30–60 个汉字的外形身份证——物种或身份、毛色/肤色/材质、花纹分布（如「白色胸口与四爪、耳尖深色」）、眼睛颜色、体型、标志性配饰或穿着。
@@ -134,6 +135,7 @@ ${transcript}
   ],
   "rhythm": {"avgShotSec": 2.5, "beatPattern": "节奏描述", "cutPoints": [3.2, 6.8]},
   "style": {"palette": ["主色", "辅色"], "typography": "字幕排版", "music": "音乐风格", "colorGrade": "调色", "subject": "画面主体"},
+  "lens": "镜头语言（如：鱼眼超广角 + 门禁摄像头视角，四角桶形畸变；没有就写空字符串）",
   "characters": [{"name": "橘猫", "identity": "外形身份证（30–60 字，具体到毛色/花纹/眼睛/体型/配饰）"}],
   "subjectIdentity": "同 characters[0].identity",
   "occasion": {"name": "节令/热点名，没有就写空字符串", "why": "为什么必须在这个时间点发"},
@@ -200,6 +202,7 @@ ${coreSection}
 ${dna}
 
 ## 风格特征（必须复刻）
+- 镜头语言：${(analysis.meta.lens ?? '').trim() === '' ? '（源片没有特殊镜头语言）' : analysis.meta.lens}
 - 主色调：${analysis.style.palette.join(' / ')}
 - 字幕排版：${analysis.style.typography}
 - 调色：${analysis.style.colorGrade}
@@ -241,6 +244,10 @@ ${options.mode === 'faithful'
     : '（A 换题材但保留最核心的机制；B 保留情绪曲线、换钩子与叙事顺序；C 只借最抽象的一条机制，用完全不同的结构讲一个新故事）'}。
 2. 每个版本 3–6 个分镜（源片镜头多时合并同类镜头），时长分配对齐源片的节奏感；不要为了塞镜头把每镜压到 3 秒以下。
 3. 每个分镜 duration = endSec - startSec，且 3 秒 ≤ duration ≤ 8 秒；全部分镜时长之和不得超过 ${Math.round(options.targetDurationSec * 1.2)} 秒。
+3.5 **镜头语言必须贯穿全片**：${(analysis.meta.lens ?? '').trim() === ''
+    ? '源片没有特殊镜头语言，按常规拍。'
+    : `源片用的是「${analysis.meta.lens}」，这是这条片子的眼睛。**每一镜**的 visualPrompt 都必须带上这层镜头语言（例如「鱼眼超广角，四角明显桶形畸变，门禁机位」），不能只在某一镜写、也不能换成普通镜头。`}
+
 4. **一镜一主动作**：每个分镜只安排一个可被单镜头拍出来的主动作，并写清起点姿态与结束姿态；复杂动作拆成多个分镜（起手—动作—结果），不要塞进同一镜。身体反应要发生在触发之后（听到台词才变脸，被碰到才后退）。
 5. 每镜必须填：
    - shotType：只能从【特写 / 近景 / 中近景 / 中景 / 全景 / 远景】选一个；对白镜用近景/中近景；
@@ -332,6 +339,8 @@ export function framePrompt(options: {
   productMode?: 'reference' | 'text'
   /** 角色锚点：纯复刻时为每个角色各有一张设定图，各镜首帧以它们为参考（按数组顺序对应图片1..N）。 */
   subjectAnchors?: Array<{ name: string, description: string }>
+  /** 全片镜头语言（鱼眼/门禁/监控…），逐镜复用，避免首帧换成普通镜头。 */
+  lens?: string
 }): string {
   const textMode = options.productMode === 'text'
   const style = FRAME_STYLES[options.frameStyle ?? 'photo'] ?? FRAME_STYLES.photo
@@ -359,7 +368,7 @@ const material = !options.hasProduct
       : `\n[素材] 图片1 = 产品外观锚定。${options.productVisual === '' ? '产品的容器外形、主色、材质与包装文字严格以图片1为准。' : `产品视觉身份证：${clean(options.productVisual)}；容器外形、主色、材质、包装文字与朝向严格以图片1为准。`}\n产品在本镜的呈现：${placement}。`
 
   return `为镜头 SH${String(options.segment.index).padStart(2, '0')} 生成一张适合「图生视频」的首帧。
-[构图] 景别：${shotType}${camera === '' ? '' : `；运镜意图：${camera}（首帧是动作开始前的定格，镜头参数只影响构图）`}。画面内容：${options.segment.visualPrompt}
+[构图] 景别：${shotType}${camera === '' ? '' : `；运镜意图：${camera}（首帧是动作开始前的定格，镜头参数只影响构图）`}。${(options.lens ?? '').trim() === '' ? '' : `\n[镜头] 全片固定镜头语言：${clean(options.lens ?? '')}。本帧必须用这个镜头拍出来（畸变/机位/焦段一致），不要换成普通镜头。`}\n画面内容：${options.segment.visualPrompt}
 [起始姿态] 只表现动作开始前的清晰状态：${options.hasProduct ? '主体姿态、手部、产品与空间关系完整，产品落点符合支撑与重力' : '主体姿态、手部（或前爪）与道具、空间的关系完整，落点符合支撑与重力'}；不要把后续动作提前画出来，不要出现运动残影。${subject}${material}
 [反讽落地] 如果本镜是中文双关/俗语的字面化（画饼、背锅、摸鱼、穿小鞋…），必须把那个**字面物件**画成**真实存在的实物**：画饼要画成一张真实的、刚出锅的大饼（金黄、有焦斑、冒热气，像真食物），背锅要画成真实的铁锅，不能画成饼图、图标、示意图、剪贴画或文字。形状、尺寸、位置、颜色都要具体可辨。
 ${lighting === '' ? '' : `[光线] ${lighting}；光向全片保持一致。\n`}${environment === '' ? '' : `[环境动态] ${environment}（首帧里保持静止或轻微可辨，不要抢主体）。\n`}[画面] 主体清晰、前景/中景/背景分层；画面下方留出干净区域便于后期字幕；画面内不生成任何文字。
@@ -406,6 +415,8 @@ export function videoPrompt(options: {
   includeProductImage?: boolean
   /** 角色锚点：写进连续性锁，避免 Seedance 每镜把角色换掉。 */
   subjectIdentity?: string
+  /** 全片镜头语言（鱼眼/门禁/监控…），写进连续性锁。 */
+  lens?: string
 }): string {
   const usesProductImage = options.hasProduct && (options.includeProductImage ?? true)
   const subjectLock = options.subjectIdentity === undefined || options.subjectIdentity.trim() === ''
@@ -446,6 +457,7 @@ export function videoPrompt(options: {
     lockLines.push('画面中不出现任何品牌 Logo、广告文字或额外人物。')
   }
   if (subjectLock !== '') lockLines.push(subjectLock.replace(/^\n/, ''))
+  if ((options.lens ?? '').trim() !== '') lockLines.push(`镜头语言：${clean(options.lens ?? '')}；全段保持同一视角、同一焦段与同样的畸变，不要切到普通镜头。`)
   if (baseline !== '') lockLines.push(`光线基准：${baseline}，全段保持同一光向与色温。`)
   lockLines.push(`空间：保持${usesProductImage ? '图片2' : '图片1'}中的空间结构与背景固定元素，主体脚下的接触关系真实。`)
 

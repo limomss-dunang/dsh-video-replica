@@ -149,6 +149,8 @@ export interface AnalysisReport {
     fps: number
     style: string
     pacing: string
+    /** 镜头语言/视角：鱼眼超广角、门禁摄像头、监控机位、第一人称、俯拍…没有特殊镜头时为空。 */
+    lens?: string
   }
   /** 一句话概括这条视频靠什么爆。 */
   summary: string
