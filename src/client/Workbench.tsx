@@ -1694,7 +1694,7 @@ function StagePublish(props: StagePublishProps): JSX.Element {
     void regenerate()
   }, [compose === undefined, caption === undefined])
 
-  const running = state?.status === 'waiting-login' || state?.status === 'uploading' || state?.status === 'publishing'
+  const running = state?.status === 'waiting-login' || state?.status === 'uploading' || state?.status === 'publishing' || state?.status === 'waiting-verify'
   const ready = description.trim() !== '' && !generating
   const platformLabel = PUBLISH_PLATFORMS.find(item => item.value === platform)?.label ?? platform
   const donePlatforms = PUBLISH_PLATFORMS.filter(item => props.run.publishes?.[item.value]?.status === 'done')
@@ -1770,7 +1770,11 @@ function StagePublish(props: StagePublishProps): JSX.Element {
                     onClick={() => props.onPublish({ platform, title: title.trim(), description: description.trim(), topics })}
                   >
                     {running
-                      ? (state?.status === 'waiting-login' ? '等待扫码登录…' : state?.status === 'uploading' ? '上传中…' : '发表中…')
+                      ? (state?.status === 'waiting-login'
+                        ? '等待扫码登录…'
+                        : state?.status === 'uploading'
+                          ? '上传中…'
+                          : state?.status === 'waiting-verify' ? '等待短信验证…' : '发表中…')
                       : `发布到${platformLabel}`}
                   </button>
                   {state !== undefined && <span className="vr-hint">{state.message}</span>}

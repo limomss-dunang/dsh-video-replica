@@ -259,7 +259,7 @@ export async function waitForPublishResult(page: Page, frame: Frame, options: {
 // ---------------------------------------------------------------------------
 
 export interface PublishProgress {
-  status: 'waiting-login' | 'uploading' | 'publishing'
+  status: 'waiting-login' | 'uploading' | 'publishing' | 'waiting-verify'
   message: string
 }
 
@@ -435,6 +435,7 @@ async function waitDouyinReady(page: Page, options: {
 }
 
 /** 等抖音视频上传/转码完成：上传中/进度消失且「发布」按钮可用。 */
+/** 等抖音视频真正可预览：预览 <video> readyState>=3 且时长>0（页面提示文案里的「上传中」不算）。 */
 async function waitDouyinUpload(page: Page, options: {
   timeoutSec: number
   log: (level: 'info' | 'warn', text: string) => void
@@ -442,26 +443,20 @@ async function waitDouyinUpload(page: Page, options: {
 }): Promise<void> {
   const deadline = Date.now() + options.timeoutSec * 1000
   let noted = 0
-  let stable = 0
   for (;;) {
     if (options.signal?.aborted === true) throw new Error('已停止')
+    const ready = await page.evaluate(() => [...document.querySelectorAll('video')]
+      .some(video => video.readyState >= 3 && video.duration > 0)).catch(() => false)
+    if (ready) return
     const text = await pageText(page)
     if (/上传失败|转码失败|视频格式不支持/.test(text)) throw new Error('抖音提示上传/转码失败，请到浏览器窗口查看')
-    const uploading = /上传中|正在上传|取消上传|转码中/.test(text)
-    const ready = /作品描述|添加作品描述|发布/.test(text)
-    if (!uploading && ready) {
-      stable += 1
-      if (stable >= 2) return
-    } else {
-      stable = 0
-    }
     if (Date.now() > deadline) throw new Error('等待抖音视频上传/转码超时，请到浏览器窗口查看进度')
     if (Date.now() - noted > 20_000) {
       const percent = text.match(/(\d{1,3})\s*%/)?.[1]
       options.log('info', percent === undefined ? '抖音上传中…' : `抖音上传中… ${percent}%`)
       noted = Date.now()
     }
-    await page.waitForTimeout(3000)
+    await page.waitForTimeout(2000)
   }
 }
 
@@ -503,8 +498,11 @@ async function fillDouyinFields(page: Page, input: { description: string, title?
 /** 抖音：点发布并等结果。 */
 async function submitDouyin(page: Page, options: {
   log: (level: 'info' | 'warn', text: string) => void
+  onProgress: (progress: { status: 'publishing' | 'waiting-verify', message: string }) => void
   signal?: AbortSignal
 }): Promise<string> {
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {})
+  await page.waitForTimeout(600)
   const clicked = await inFirstFrame(page, async (frame) => {
     const exact = frame.getByRole('button', { name: /^发布$/ }).first()
     const target = (await exact.count().catch(() => 0)) > 0 ? exact : frame.locator('button:has-text("发布")').first()
@@ -514,29 +512,37 @@ async function submitDouyin(page: Page, options: {
     return true
   })
   if (clicked !== true) throw new Error('没找到抖音「发布」按钮：页面可能改版，浏览器窗口保留可手动点')
-  const deadline = Date.now() + 120_000
-  let confirmed = false
+
+  const deadline = Date.now() + 8 * 60_000
+  let verifyNoted = false
   for (;;) {
     if (options.signal?.aborted === true) throw new Error('已停止')
-    await page.waitForTimeout(2500)
+    await page.waitForTimeout(3000)
     const text = await pageText(page)
+    // 风控短信验证：平台要求本人确认，脚本无法代过，只能等用户在浏览器窗口里完成。
+    if (/短信验证码|接收短信验证码|获取验证码/.test(text)) {
+      if (!verifyNoted) {
+        verifyNoted = true
+        options.log('warn', '抖音要求短信验证：请在打开的浏览器窗口里点「获取验证码」并输入验证码（最多等 5 分钟）')
+        options.onProgress({ status: 'waiting-verify', message: '等待短信验证…' })
+      }
+      if (Date.now() > deadline) throw new Error('抖音短信验证超时：请在浏览器窗口完成验证后重试')
+      continue
+    }
     if (/发布成功|作品已发布|发布完成/.test(text) || /content\/manage/.test(page.url())) return page.url()
-    if (/发布失败|违规|不可发布|请先/.test(text)) {
-      const line = text.split('\n').map(item => item.trim()).find(item => /发布失败|违规|不可发布|请先/.test(item))
+    if (/发布失败|请完善信息|违规|不可发布/.test(text)) {
+      const line = text.split('\n').map(item => item.trim()).find(item => /发布失败|请完善信息|违规|不可发布/.test(item))
       throw new Error(`抖音提示：${line ?? '发布失败'}`)
     }
-    if (!confirmed) {
-      const confirmedClick = await inFirstFrame(page, async (frame) => {
-        const confirm = frame.getByRole('button', { name: /^(确认|确定|继续发布)$/ }).first()
-        if (await confirm.count().catch(() => 0) === 0) return undefined
-        await confirm.click().catch(() => {})
-        return true
-      })
-      if (confirmedClick === true) {
-        confirmed = true
-        options.log('info', '抖音出现二次确认，已自动确认')
-        continue
-      }
+    const confirmedClick = await inFirstFrame(page, async (frame) => {
+      const confirm = frame.getByRole('button', { name: /^(确认|确定|继续发布)$/ }).first()
+      if (await confirm.count().catch(() => 0) === 0) return undefined
+      await confirm.click().catch(() => {})
+      return true
+    })
+    if (confirmedClick === true) {
+      options.log('info', '抖音出现二次确认，已自动确认')
+      continue
     }
     if (Date.now() > deadline) throw new Error('点了抖音发布但没等到成功提示，请到浏览器窗口确认')
   }
@@ -578,7 +584,7 @@ export async function publishToDouyin(options: PublishChannelsOptions): Promise<
     await fillDouyinFields(page, { description, ...(title === undefined ? {} : { title }) }, log)
 
     onProgress({ status: 'publishing', message: '点发布…' })
-    const postUrl = await submitDouyin(page, { log, ...(signal === undefined ? {} : { signal }) })
+    const postUrl = await submitDouyin(page, { log, onProgress, ...(signal === undefined ? {} : { signal }) })
     const screenshot = await capture(page, options.runDir, 'douyin-ok')
     log('info', '抖音发布成功')
     keepOpen = false

@@ -348,7 +348,7 @@ export const PUBLISH_PLATFORMS: Array<{ value: PublishPlatform, label: string, l
   },
 ]
 
-export type PublishStatus = 'idle' | 'waiting-login' | 'uploading' | 'publishing' | 'done' | 'failed'
+export type PublishStatus = 'idle' | 'waiting-login' | 'uploading' | 'publishing' | 'waiting-verify' | 'done' | 'failed'
 
 /** 发布文案（标题 / 话题 / 描述），由文本模型生成后可手动改。 */
 export interface PublishCaption {

@@ -1905,9 +1905,13 @@ async function stepPublish(ctx: PipelineContext): Promise<void> {
       signal: ctx.signal,
       runDir: dirOf(ctx),
       log: (level: 'info' | 'warn', text: string) => ctx.log('publish', level, text),
-      onProgress: (progress: { status: 'waiting-login' | 'uploading' | 'publishing', message: string }) => {
+      onProgress: (progress: { status: 'waiting-login' | 'uploading' | 'publishing' | 'waiting-verify', message: string }) => {
         syncState({ status: progress.status, message: progress.message })
-        const ratio = progress.status === 'waiting-login' ? 0.15 : progress.status === 'uploading' ? 0.45 : 0.8
+        const ratio = progress.status === 'waiting-login'
+          ? 0.15
+          : progress.status === 'uploading'
+            ? 0.45
+            : progress.status === 'waiting-verify' ? 0.6 : 0.8
         ctx.setStep('publish', { progress: ratio, message: progress.message })
       },
     }
