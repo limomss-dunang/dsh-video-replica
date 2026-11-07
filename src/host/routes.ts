@@ -19,7 +19,7 @@ import { ConfigStore, toConfigView } from './config.ts'
 import type { Engine } from './engine.ts'
 import type { RunStore } from './store.ts'
 import { detectPlatform, extractUrl, looksLikeDirectVideo, parseViaApi } from './providers/parser.ts'
-import { toolAvailable } from './media.ts'
+import { toolAvailable, writeAssSubtitle } from './media.ts'
 import { chatComplete } from './providers/chat.ts'
 import type { DshModels } from './dsh.ts'
 import { completeText, describeEndpoint, resolveEndpoint, usesDsh } from './endpoint-resolver.ts'
@@ -28,7 +28,7 @@ import { dirname } from 'node:path'
 import { regenerateFrame, regenerateSegment, type PipelineContext } from './pipeline.ts'
 import { composePostText, generateCaption } from './caption.ts'
 import { CAMERA_MOVES, SHOT_TYPES } from './prompts.ts'
-import { buildPromptPreview } from './pipeline.ts'
+import { buildPromptPreview, buildSubtitlePreview, previewNarration } from './pipeline.ts'
 import { asString, isLoopbackRequest, messageOf } from './util.ts'
 
 const MAX_JSON_BYTES = 8 * 1024 * 1024
@@ -502,6 +502,38 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
         await store.flush(runId)
         await engine.start(runId, { from: 'publish', autoAdvance: false })
         break
+      }
+      case 'preview-subtitles': {
+        // 字幕预览：按脚本与时长估算行，并顺手写一份 ASS 供下载核对。
+        const rows = buildSubtitlePreview(run)
+        if (rows.length === 0) throw new Error('还没有字幕文案：先在「AI 仿写」里补口播/大字')
+        const config = await configs.read()
+        const file = 'preview/subs.ass'
+        const subsDir = join(store.runDir(runId), 'preview')
+        await mkdir(subsDir, { recursive: true })
+        await writeAssSubtitle({
+          cues: rows.map(row => ({ startSec: row.startSec, endSec: row.endSec, text: row.text })),
+          output: join(subsDir, 'subs.ass'),
+          width: run.compose?.width ?? 1080,
+          height: run.compose?.height ?? 1920,
+          fontSize: config.compose.subtitleFontSize,
+        })
+        return { run, busy: engine.isBusy(runId), items: rows, file }
+      }
+      case 'preview-tts': {
+        // 试听配音：只跑 TTS，不合成视频。
+        const config = await configs.read()
+        const items = await previewNarration({
+          config,
+          ...(dsh === undefined ? {} : { dsh }),
+          store,
+          run,
+          signal: new AbortController().signal,
+          setStep: () => {},
+          log: (id, level, text) => store.log(run, id, level, text),
+        })
+        await store.flush(runId)
+        return { run, busy: engine.isBusy(runId), items }
       }
       case 'reveal': {
         // 在系统文件管理器里打开任务目录 / 源视频所在目录。

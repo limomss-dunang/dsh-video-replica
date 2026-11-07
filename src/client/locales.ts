@@ -167,6 +167,10 @@ export interface Copy {
   publishStatus: string
   openFolder: string
   runNext: string
+  previewTts: string
+  previewSubtitles: string
+  previewTtsHint: string
+  previewSubsHint: string
   copyPath: string
   captionGenerating: string
   captionRegenerate: string
@@ -375,6 +379,10 @@ export const zh: Copy = {
   publishStatus: '发布状态',
   openFolder: '打开文件夹',
   runNext: '执行下一步',
+  previewTts: '试听配音',
+  previewSubtitles: '预览字幕',
+  previewTtsHint: '只跑 TTS，按成片的音色逐段合成，不消耗视频/图片额度',
+  previewSubsHint: '按脚本和分镜时长估算字幕时间轴，可直接核对断句与字号',
   copyPath: '复制路径',
   captionGenerating: '正在生成标题和话题…',
   captionRegenerate: '换一版文案',
@@ -583,6 +591,10 @@ export const en: Copy = {
   publishStatus: 'Publish status',
   openFolder: 'Open folder',
   runNext: 'Run next step',
+  previewTts: 'Preview voiceover',
+  previewSubtitles: 'Preview subtitles',
+  previewTtsHint: 'Runs TTS only — same voices as the final cut, no image or video cost',
+  previewSubsHint: 'Estimates subtitle timing from the script and shot durations',
   copyPath: 'Copy path',
   captionGenerating: 'Writing the title and topics…',
   captionRegenerate: 'Another version',

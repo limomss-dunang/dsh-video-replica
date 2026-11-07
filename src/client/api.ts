@@ -180,6 +180,14 @@ export class VideoReplicaApi {
     return this.action({ runId, action: 'reset-anchor' })
   }
 
+  previewTts(runId: string): Promise<{ items?: Array<{ index: number, speaker: string, voice: string, text: string, file: string }> }> {
+    return this.action({ runId, action: 'preview-tts' }) as unknown as Promise<{ items?: Array<{ index: number, speaker: string, voice: string, text: string, file: string }> }>
+  }
+
+  previewSubtitles(runId: string): Promise<{ items?: Array<{ index: number, startSec: number, endSec: number, text: string, segmentIndex: number }>, file?: string }> {
+    return this.action({ runId, action: 'preview-subtitles' }) as unknown as Promise<{ items?: Array<{ index: number, startSec: number, endSec: number, text: string, segmentIndex: number }>, file?: string }>
+  }
+
   setRewriteMode(runId: string, mode: 'faithful' | 'redesign'): Promise<unknown> {
     return this.action({ runId, action: 'set-rewrite-mode', mode })
   }

@@ -1734,6 +1734,101 @@ export async function stepCompose(ctx: PipelineContext): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// 合成前的「试听配音 / 预览字幕」
+// ---------------------------------------------------------------------------
+
+export interface SubtitlePreviewRow {
+  index: number
+  startSec: number
+  endSec: number
+  text: string
+  segmentIndex: number
+}
+
+/** 字幕预览：按分镜顺序与字符数估算时间轴（不进 ffmpeg，纯预览）。 */
+export function buildSubtitlePreview(run: RunState): SubtitlePreviewRow[] {
+  const variant = selectedVariant(run)
+  if (variant === undefined) return []
+  const rows: SubtitlePreviewRow[] = []
+  let cursor = 0
+  for (const chunk of buildChunks(variant.segments)) {
+    const shots = (chunk.shots ?? [])
+      .map(shot => ({ text: subtitleText(shot), segmentIndex: shot.index }))
+      .filter(item => item.text.trim() !== '')
+    const totalChars = shots.reduce((sum, item) => sum + item.text.length, 0)
+    if (totalChars === 0) {
+      cursor += chunk.durationSec
+      continue
+    }
+    for (const item of shots) {
+      const span = Math.max(0.6, chunk.durationSec * (item.text.length / totalChars))
+      rows.push({
+        index: rows.length + 1,
+        startSec: cursor,
+        endSec: cursor + span,
+        text: item.text,
+        segmentIndex: item.segmentIndex,
+      })
+      cursor += span
+    }
+  }
+  return rows
+}
+
+export interface TtsPreviewItem {
+  index: number
+  speaker: string
+  voice: string
+  text: string
+  file: string
+}
+
+/** 试听配音：按成片的说话人/音色逐段合成，落盘到 preview/，不合成视频。 */
+export async function previewNarration(ctx: PipelineContext): Promise<TtsPreviewItem[]> {
+  const { run, config } = ctx
+  const variant = selectedVariant(run)
+  if (variant === undefined) throw new Error('还没有选定脚本，先完成「AI 仿写」')
+  if (!config.tts.enabled) throw new Error('配音未启用：请到「设置 → 视频复刻 → 配音」打开')
+
+  const casting = voiceCasting(variant.segments, config)
+  const items: TtsPreviewItem[] = []
+  for (const [index, chunk] of buildChunks(variant.segments).entries()) {
+    checkAbort(ctx)
+    const shots = chunk.shots ?? []
+    const text = shots.map(shot => subtitleText(shot)).filter(item => item !== '').join('')
+    if (text.trim() === '') continue
+    const speaker = shots.map(shot => shot.speaker.trim()).find(item => item !== '') ?? '主角'
+    const voice = casting.get(speaker) ?? config.tts.voice
+    const style = ttsStyleFor(
+      shots.map(shot => shot.emotion ?? '').filter(item => item !== ''),
+      run.analysis?.creativeDevice ?? '',
+      run.analysis?.summary ?? '',
+    )
+    const endpoint = await resolveEndpoint(ctx.dsh, config.tts, `试听 ${index + 1}`)
+    const file = `preview/tts-${pad2(index + 1)}.mp3`
+    const speech = await synthesizeSpeech({
+      config: {
+        ...config.tts,
+        apiUrl: endpoint.apiUrl,
+        apiKey: endpoint.apiKey,
+        model: endpoint.model,
+        protocol: endpoint.fromDsh ? 'openai-tts' : config.tts.protocol,
+        voice,
+      },
+      text,
+      outFile: abs(ctx, file),
+      label: `试听 ${index + 1}`,
+      ...(style === '' ? {} : { style }),
+      ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+    })
+    items.push({ index: index + 1, speaker, voice: speech.voice ?? voice, text, file })
+    ctx.log('compose', 'info', `试听配音 ${index + 1}：${speaker} → 音色 ${voice}`)
+  }
+  if (items.length === 0) throw new Error('脚本里没有口播文案，试听不到内容（可以先在「AI 仿写」补台词）')
+  return items
+}
+
+// ---------------------------------------------------------------------------
 // 第 7 步：一键发布
 // ---------------------------------------------------------------------------
 

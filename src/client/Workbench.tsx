@@ -1779,6 +1779,36 @@ function StagePublish(props: StagePublishProps): JSX.Element {
 
 function StageCompose(props: StageComposeProps): JSX.Element {
   const compose = props.run.compose
+  const [tts, setTts] = useState<Array<{ index: number, speaker: string, voice: string, text: string, file: string }> | undefined>(undefined)
+  const [subs, setSubs] = useState<{ rows: Array<{ index: number, startSec: number, endSec: number, text: string }>, file?: string } | undefined>(undefined)
+  const [previewing, setPreviewing] = useState<'tts' | 'subs' | undefined>(undefined)
+  const [previewError, setPreviewError] = useState('')
+
+  const runTtsPreview = async (): Promise<void> => {
+    setPreviewing('tts')
+    setPreviewError('')
+    try {
+      const result = await props.api.previewTts(props.run.id)
+      setTts(result.items ?? [])
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPreviewing(undefined)
+    }
+  }
+  const runSubsPreview = async (): Promise<void> => {
+    setPreviewing('subs')
+    setPreviewError('')
+    try {
+      const result = await props.api.previewSubtitles(props.run.id)
+      setSubs({ rows: result.items ?? [], ...(result.file === undefined ? {} : { file: result.file }) })
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPreviewing(undefined)
+    }
+  }
+
   return (
     <>
       <StageHeader title={STEP_LABELS.compose} step={props.step} onRun={props.onRun} />
@@ -1801,6 +1831,57 @@ function StageCompose(props: StageComposeProps): JSX.Element {
         })}
         <span className="vr-hint">{tt('audioSourceHint')}</span>
       </div>
+      <Card title="合成前预览">
+        <div className="vr-row" style={{ gap: 8, alignItems: 'center' }}>
+          <button type="button" className="vr-btn" disabled={previewing !== undefined} onClick={() => void runTtsPreview()}>
+            {previewing === 'tts' ? '合成中…' : tt('previewTts')}
+          </button>
+          <button type="button" className="vr-btn" disabled={previewing !== undefined} onClick={() => void runSubsPreview()}>
+            {previewing === 'subs' ? '计算中…' : tt('previewSubtitles')}
+          </button>
+          <span className="vr-hint">{tt('previewTtsHint')}</span>
+        </div>
+        {previewError !== '' && <div className="vr-banner" data-tone="err">{previewError}</div>}
+        {tts !== undefined && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+            {tts.length === 0 && <span className="vr-hint">没有可试听的台词</span>}
+            {tts.map(item => (
+              <div key={item.index} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div className="vr-row" style={{ gap: 8, alignItems: 'center' }}>
+                  <span className="vr-idx">段 {item.index}</span>
+                  <Pill>{item.speaker} · {item.voice}</Pill>
+                  <span className="vr-hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 420 }}>{item.text}</span>
+                </div>
+                <audio controls preload="none" src={mediaUrl(props.run.id, item.file)} style={{ width: '100%' }} />
+              </div>
+            ))}
+          </div>
+        )}
+        {subs !== undefined && (
+          <div style={{ marginTop: 10 }}>
+            <div className="vr-row" style={{ gap: 8, alignItems: 'center', marginBottom: 6 }}>
+              <span className="vr-hint">{subs.rows.length} 条 · 时间轴按字符数估算（成片会以实际语音时长对齐）</span>
+              {subs.file !== undefined && (
+                <a className="vr-btn" data-size="sm" href={mediaUrl(props.run.id, subs.file, { download: true })} download>下载 ASS</a>
+              )}
+            </div>
+            <div style={{ maxHeight: 320, overflow: 'auto' }}>
+              <table className="vr-table">
+                <thead><tr><th style={{ width: 44 }}>#</th><th style={{ width: 120 }}>时间</th><th>字幕</th></tr></thead>
+                <tbody>
+                  {subs.rows.map(row => (
+                    <tr key={row.index}>
+                      <td className="vr-idx">{row.index}</td>
+                      <td className="vr-idx">{row.startSec.toFixed(1)}–{row.endSec.toFixed(1)}s</td>
+                      <td>{row.text}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Card>
       {compose === undefined
         ? <Empty text={tt('composeMissing')} />
         : (
