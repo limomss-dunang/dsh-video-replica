@@ -66,7 +66,7 @@ function activate(ctx: HostContext, config?: Config): (() => void) | void {
   const store = new RunStore(() => dataRoot)
   // DSH 已配置模型：全部经 ctx.get 取服务（0.2.x 直接读未 inject 的属性会抛错）。
   const dsh = new DshModels((name: string) => ctx.get?.(name))
-  const engine = new Engine(configs, store, dsh)
+  const engine = new Engine(configs, store, dsh, (serviceName: string) => ctx.get?.(serviceName))
   // 应用重启后把「上次被执行中断」的运行标记出来（否则界面一直转圈）。
   void engine.repairInterrupted().catch(() => {})
 

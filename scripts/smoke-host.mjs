@@ -525,7 +525,14 @@ log('最终状态', run?.status)
 for (const step of run?.steps ?? []) {
   log(`  ${step.id.padEnd(9)} ${step.status.padEnd(8)} ${step.message ?? ''}${step.error === undefined ? '' : ` | ${step.error}`}`)
 }
-check('六步全部完成', run?.status === 'done', JSON.stringify(run?.steps?.filter(step => step.status !== 'done')).slice(0, 500))
+// 第七步「一键发布」是手动步骤：自动连续执行只会跑完前六步，发布保持 pending
+const contentSteps = (run?.steps ?? []).filter(step => step.id !== 'publish')
+const publishStep = (run?.steps ?? []).find(step => step.id === 'publish')
+check('六步自动执行完成，发布保持待执行',
+  run?.status === 'done'
+  && contentSteps.every(step => step.status === 'done')
+  && publishStep?.status === 'pending',
+  JSON.stringify((run?.steps ?? []).map(step => ({ id: step.id, s: step.status }))).slice(0, 400))
 check('拆解结果写入', (run?.analysis?.shots?.length ?? 0) === 3)
 check('语音识别在 whisper 404 时自动切 chat-asr',
   (run?.analysis?.transcript?.length ?? 0) >= 1

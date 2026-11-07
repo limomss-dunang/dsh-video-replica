@@ -13,6 +13,9 @@ import type { RunStore } from './store.ts'
 import type { DshModels } from './dsh.ts'
 import { messageOf } from './util.ts'
 
+/** 只能手动点、不参与自动连续执行的步骤（发布对外有副作用）。 */
+const MANUAL_STEPS: readonly StepId[] = ['publish']
+
 interface ActiveJob {
   controller: AbortController
   promise: Promise<void>
@@ -27,6 +30,8 @@ export class Engine {
     private readonly store: RunStore,
     /** DSH 已配置模型接入层（可选，缺失时只能用手填接口）。 */
     private readonly dsh?: DshModels,
+    /** 取宿主服务（浏览器服务等）；由插件入口传入 ctx.get。 */
+    private readonly getService?: (name: string) => unknown,
   ) {}
 
   /**
@@ -77,12 +82,14 @@ export class Engine {
 
   /** 建一个可取消的 pipeline 上下文。 */
   private makeContext(run: RunState, config: PluginConfig, controller: AbortController): PipelineContext {
+    const browser = this.getService?.('browser') as PipelineContext['browser']
     return {
       config,
       store: this.store,
       run,
       signal: controller.signal,
       ...(this.dsh === undefined ? {} : { dsh: this.dsh }),
+      ...(browser === undefined ? {} : { browser }),
       setStep: (step: StepId, patch: Partial<StepState>) => {
         const target = run.steps.find(item => item.id === step)
         if (target === undefined) return
@@ -158,12 +165,15 @@ export class Engine {
       try {
         for (let index = startIndex; index < STEP_IDS.length; index += 1) {
           const step = STEP_IDS[index] as StepId
+          // 手动步骤：自动连续执行时停在它前面，保留 pending 等用户点。
+          if (index > startIndex && MANUAL_STEPS.includes(step)) break
           job.step = step
           if (controller.signal.aborted) throw new Error('已停止')
           await this.runOne(run, context, step)
           if (!autoAdvance) break
         }
-        const remaining = run.steps.find(step => step.status === 'pending')
+        // 手动步骤（发布）保持 pending 不算“没跑完”，否则自动执行完六步永远是 idle。
+        const remaining = run.steps.find(step => step.status === 'pending' && !MANUAL_STEPS.includes(step.id))
         if (remaining === undefined) {
           run.status = 'done'
           this.store.log(run, 'run', 'info', '全部步骤完成')
@@ -239,9 +249,10 @@ export class Engine {
 
   /** 下一个应执行的步骤。 */
   nextStep(run: RunState): StepId | undefined {
-    const pending = run.steps.find(step => step.status === 'pending')
+    // 手动步骤不自动挑起来：一键发布对外有副作用，必须用户点。
+    const pending = run.steps.find(step => step.status === 'pending' && !MANUAL_STEPS.includes(step.id))
     if (pending !== undefined) return pending.id
-    const failed = run.steps.find(step => step.status === 'failed')
+    const failed = run.steps.find(step => step.status === 'failed' && !MANUAL_STEPS.includes(step.id))
     return failed?.id
   }
 

@@ -34,14 +34,14 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
 // 步骤
 // ---------------------------------------------------------------------------
 
-export type StepId = 'parse' | 'analyze' | 'rewrite' | 'match' | 'generate' | 'compose'
+export type StepId = 'parse' | 'analyze' | 'rewrite' | 'match' | 'generate' | 'compose' | 'publish'
 
 /** 景别白名单（host 提示词与客户端编辑器共用）。 */
 export const SHOT_TYPES = ['特写', '近景', '中近景', '中景', '全景', '远景'] as const
 /** 运镜白名单：一镜只用一种。 */
 export const CAMERA_MOVES = ['固定', '缓慢推近', '缓慢拉远', '横摇', '跟拍', '环绕', '手持', '拉焦'] as const
 
-export const STEP_IDS: StepId[] = ['parse', 'analyze', 'rewrite', 'match', 'generate', 'compose']
+export const STEP_IDS: StepId[] = ['parse', 'analyze', 'rewrite', 'match', 'generate', 'compose', 'publish']
 
 export const STEP_LABELS: Record<StepId, string> = {
   parse: '解析下载',
@@ -50,6 +50,7 @@ export const STEP_LABELS: Record<StepId, string> = {
   match: '参考图匹配',
   generate: 'AI 生成视频',
   compose: '合成成片',
+  publish: '一键发布',
 }
 
 export type StepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
@@ -303,6 +304,36 @@ export interface RunLogEntry {
   text: string
 }
 
+/** 支持的发布平台（先只做视频号）。 */
+export type PublishPlatform = 'channels'
+
+export const PUBLISH_PLATFORMS: Array<{ value: PublishPlatform, label: string, loginUrl: string, createUrl: string }> = [
+  {
+    value: 'channels',
+    label: '视频号',
+    loginUrl: 'https://channels.weixin.qq.com/login.html',
+    createUrl: 'https://channels.weixin.qq.com/platform/post/create',
+  },
+]
+
+export type PublishStatus = 'idle' | 'waiting-login' | 'uploading' | 'publishing' | 'done' | 'failed'
+
+/** 一次发布的运行状态（落盘，刷新不丢）。 */
+export interface PublishState {
+  platform: PublishPlatform
+  status: PublishStatus
+  message: string
+  title?: string
+  description?: string
+  /** 发布后页面上取到的作品链接（拿得到才有）。 */
+  postUrl?: string
+  /** 关键步骤截图（运行目录内相对路径）。 */
+  screenshot?: string
+  startedAt?: number
+  endedAt?: number
+  error?: string
+}
+
 export interface RunState {
   id: string
   title: string
@@ -322,6 +353,8 @@ export interface RunState {
   audioSource?: 'tts' | 'original'
   /** 成片画幅：创建时选好，后续步骤全程按它出图/出片。 */
   aspectRatio?: AspectRatio
+  /** 第七步：一键发布的运行状态。 */
+  publish?: PublishState
   steps: StepState[]
   source?: SourceMeta
   analysis?: AnalysisReport

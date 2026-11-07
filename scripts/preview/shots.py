@@ -18,6 +18,7 @@ SHOTS = [
     ("match-dark", "match", "dark", 1440, 900, True, False),
     ("generate-light", "generate", "light", 1440, 900, False, True),
     ("compose-light", "compose", "light", 1440, 900, False, True),
+    ("publish-light", "publish", "light", 1440, 900, False, True),
     ("settings-light", "settings", "light", 1440, 1500, False, True),
     ("settings-narrow", "settings", "light", 980, 1500, False, True),
 ]

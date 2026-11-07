@@ -31,6 +31,7 @@ import type {
   TranscriptCue,
 } from '../shared/types.ts'
 import { PLATFORM_LABELS, aspectSizeOf } from '../shared/types.ts'
+import { publishToChannels, savePublishShot, type BrowserRuntimeLike } from './publish.ts'
 import { loadImage, type ChatImage } from './providers/chat.ts'
 import { completeText, resolveEndpoint, usesDsh } from './endpoint-resolver.ts'
 import type { DshModels } from './dsh.ts'
@@ -75,6 +76,8 @@ export interface PipelineContext {
   store: RunStore
   run: RunState
   signal: AbortSignal
+  /** 浏览器服务（dsh-browser-playwright-codex 提供；缺失时第七步报错提示）。 */
+  browser?: BrowserRuntimeLike
   /** 更新某一步的状态（内部负责合并与落盘）。 */
   setStep: (step: StepId, patch: Partial<RunState['steps'][number]>) => void
   log: (step: StepId | 'run', level: 'info' | 'warn' | 'error', text: string) => void
@@ -1505,6 +1508,89 @@ export async function stepCompose(ctx: PipelineContext): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// 第 7 步：一键发布
+// ---------------------------------------------------------------------------
+
+/** 发布描述的默认值：优先用拆解摘要，其次源片标题。 */
+function defaultPublishText(run: RunState): string {
+  const summary = run.analysis?.summary.trim() ?? ''
+  if (summary !== '') return summary
+  return (run.source?.title ?? run.title).trim()
+}
+
+async function stepPublish(ctx: PipelineContext): Promise<void> {
+  const { run } = ctx
+  const compose = run.compose
+  if (compose === undefined) throw new Error('还没有成片：请先执行「合成成片」再发布')
+  const browser = ctx.browser
+  if (browser === undefined) {
+    throw new Error('第七步需要「dsh-browser-playwright-codex」插件：没有检测到浏览器服务（ctx.browser）。安装并启用它之后重试。')
+  }
+  const platform = run.publish?.platform ?? 'channels'
+  const description = (run.publish?.description ?? '').trim() || defaultPublishText(run)
+  const title = (run.publish?.title ?? '').trim()
+  const videoFile = abs(ctx, compose.file)
+
+  ctx.setStep('publish', { status: 'running', progress: 0.05, message: '准备发布' })
+  run.publish = {
+    platform,
+    status: 'waiting-login',
+    message: '打开创作页…',
+    description,
+    ...(title === '' ? {} : { title }),
+    startedAt: Date.now(),
+  }
+  touch(ctx)
+
+  try {
+    const result = await publishToChannels({
+      browser,
+      owner: `dsh-video-replica:${run.id}`,
+      videoFile,
+      description,
+      ...(title === '' ? {} : { title }),
+      signal: ctx.signal,
+      log: (level, text) => ctx.log('publish', level, text),
+      onProgress: progress => {
+        if (run.publish !== undefined) {
+          run.publish.status = progress.status
+          run.publish.message = progress.message
+        }
+        const ratio = progress.status === 'waiting-login' ? 0.15 : progress.status === 'uploading' ? 0.45 : 0.8
+        ctx.setStep('publish', { progress: ratio, message: progress.message })
+        touch(ctx)
+      },
+    })
+    let screenshot: string | undefined
+    if (result.screenshot !== undefined) {
+      screenshot = await savePublishShot(dirOf(ctx), result.screenshot).catch(() => undefined)
+    }
+    run.publish = {
+      platform,
+      status: 'done',
+      message: '已发布',
+      description,
+      ...(title === '' ? {} : { title }),
+      ...(result.postUrl === '' ? {} : { postUrl: result.postUrl }),
+      ...(screenshot === undefined ? {} : { screenshot }),
+      startedAt: run.publish?.startedAt ?? Date.now(),
+      endedAt: Date.now(),
+    }
+    ctx.setStep('publish', { status: 'done', progress: 1, message: '已发布' })
+    touch(ctx)
+  } catch (error) {
+    const text = messageOf(error)
+    if (run.publish !== undefined) {
+      run.publish.status = 'failed'
+      run.publish.message = text
+      run.publish.error = text
+      run.publish.endedAt = Date.now()
+    }
+    throw error
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 单步重跑 / 单张重生成（界面按钮）
 // ---------------------------------------------------------------------------
 
@@ -1515,6 +1601,7 @@ export const STEP_RUNNERS: Record<StepId, (ctx: PipelineContext) => Promise<void
   match: stepMatch,
   generate: stepGenerate,
   compose: stepCompose,
+  publish: stepPublish,
 }
 
 /** 单张参考图重生成。 */

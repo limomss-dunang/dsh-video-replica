@@ -172,6 +172,10 @@ export class VideoReplicaApi {
     return this.action({ runId, action: 'regenerate-frame', segmentIndex, ...(prompt === undefined ? {} : { prompt }) })
   }
 
+  publish(runId: string, input: { platform?: string, title?: string, description?: string }): Promise<unknown> {
+    return this.action({ runId, action: 'publish', ...input })
+  }
+
   setAspectRatio(runId: string, aspectRatio: string): Promise<unknown> {
     return this.action({ runId, action: 'set-aspect-ratio', aspectRatio })
   }

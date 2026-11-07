@@ -111,6 +111,14 @@ export class RunStore {
       const text = await readFile(file, 'utf8')
       const parsed = JSON.parse(text) as RunState
       if (typeof parsed?.id !== 'string') return undefined
+      // 版本迁移：老运行缺新步骤（如第 7 步「一键发布」）时补成 pending，并按 STEP_IDS 排序。
+      parsed.steps = Array.isArray(parsed.steps) ? parsed.steps : []
+      for (const id of STEP_IDS) {
+        if (!parsed.steps.some(step => step.id === id)) {
+          parsed.steps.push({ id, status: 'pending', progress: 0 })
+        }
+      }
+      parsed.steps.sort((a, b) => STEP_IDS.indexOf(a.id) - STEP_IDS.indexOf(b.id))
       this.cache.set(runId, parsed)
       await stat(file).then(info => this.mtimes.set(runId, info.mtimeMs)).catch(() => {})
       return parsed

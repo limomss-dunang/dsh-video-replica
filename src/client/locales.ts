@@ -156,6 +156,15 @@ export interface Copy {
   aspectRatio: string
   aspectHint: string
   outputPrefs: string
+  publishTitle: string
+  publishDesc: string
+  publishDescHint: string
+  publishNow: string
+  publishHint: string
+  publishNeedBrowser: string
+  publishedUrl: string
+  publishScreenshot: string
+  publishStatus: string
   audioSource: string
   audioTts: string
   audioOriginal: string
@@ -347,6 +356,15 @@ export const zh: Copy = {
   aspectRatio: '画幅',
   aspectHint: '创建后全程按它出图/出片；改它会让首帧、视频、成片过期',
   outputPrefs: '输出偏好',
+  publishTitle: '短标题（可选）',
+  publishDesc: '发布描述',
+  publishDescHint: '视频号会把它作为动态文案；可用 #话题。默认取拆解摘要。',
+  publishNow: '发布到视频号',
+  publishHint: '点发布后会打开浏览器：未登录时用微信扫码，登录后自动上传成片、填描述并点发表。',
+  publishNeedBrowser: '未检测到「dsh-browser-playwright-codex」插件：第七步需要它的浏览器服务。',
+  publishedUrl: '作品链接',
+  publishScreenshot: '发布截图',
+  publishStatus: '发布状态',
   audioSource: '成片音轨',
   audioTts: 'TTS 配音',
   audioOriginal: '分镜视频原声',
@@ -538,6 +556,15 @@ export const en: Copy = {
   aspectRatio: 'Aspect ratio',
   aspectHint: 'Used for every frame/video in this run; changing it marks them stale',
   outputPrefs: 'Output preferences',
+  publishTitle: 'Short title (optional)',
+  publishDesc: 'Post description',
+  publishDescHint: 'Used as the post text; hashtags allowed. Defaults to the analysis summary.',
+  publishNow: 'Publish to WeChat Channels',
+  publishHint: 'Publishing opens a browser: scan the QR code if not signed in, then the plugin uploads the video, fills the description and clicks post.',
+  publishNeedBrowser: 'dsh-browser-playwright-codex is not available: step 7 needs its browser service.',
+  publishedUrl: 'Post URL',
+  publishScreenshot: 'Screenshot',
+  publishStatus: 'Publish status',
   audioSource: 'Audio source',
   audioTts: 'TTS voiceover',
   audioOriginal: 'Original video audio',

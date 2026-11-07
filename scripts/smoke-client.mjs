@@ -193,7 +193,7 @@ const text = view?.textContent ?? ''
 check('渲染标题', text.includes('爆款视频复刻'), text.slice(0, 80))
 check('首屏是输入舞台', text.includes('粘贴链接或上传视频'), text.slice(0, 120))
 check('渲染链接输入框', view?.querySelector('input.vr-input') !== null)
-check('渲染流程轨道（六步）', view?.querySelectorAll('.vr-step').length === 6, String(view?.querySelectorAll('.vr-step').length))
+check('渲染流程轨道（七步，含一键发布）', view?.querySelectorAll('.vr-step').length === 7, String(view?.querySelectorAll('.vr-step').length))
 check('渲染历史任务', text.includes('复刻测试视频'))
 check('切回会话按钮存在', [...(view?.querySelectorAll('button') ?? [])].some(button => (button.textContent ?? '').includes('会话')))
 

@@ -531,6 +531,16 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                         onRun={() => void act(() => api.runStep(run.id, 'generate'))}
                       />
                     )}
+                    {selected === 'publish' && (
+                      <StagePublish
+                        api={api}
+                        run={run}
+                        busy={busy}
+                        step={stepState as StepState}
+                        onRun={() => void act(() => api.runStep(run.id, 'publish'))}
+                        onPublish={input => void act(() => api.publish(run.id, { platform: 'channels', ...input }))}
+                      />
+                    )}
                     {selected === 'compose' && (
                       <StageCompose
                         api={api}
@@ -1462,6 +1472,82 @@ interface StageComposeProps {
   step: StepState
   onRun: () => void
   onAudioSource: (value: 'tts' | 'original') => void
+}
+
+interface StagePublishProps {
+  api: VideoReplicaApi
+  run: RunState
+  busy: boolean
+  step: StepState
+  onRun: () => void
+  onPublish: (input: { title: string, description: string }) => void
+}
+
+/** 第七步：一键发布（先只做视频号）。 */
+function StagePublish(props: StagePublishProps): JSX.Element {
+  const compose = props.run.compose
+  const publish = props.run.publish
+  const defaultDescription = props.run.analysis?.summary?.trim() ?? props.run.title
+  const [title, setTitle] = useState(publish?.title ?? '')
+  const [description, setDescription] = useState(publish?.description ?? defaultDescription)
+  const running = publish?.status === 'waiting-login' || publish?.status === 'uploading' || publish?.status === 'publishing'
+  return (
+    <>
+      <StageHeader title={STEP_LABELS.publish} step={props.step} onRun={props.onRun} busy={props.busy} />
+      <p className="vr-hint">{tt('publishHint')}</p>
+      {compose === undefined
+        ? <Empty text={tt('composeMissing')} />
+        : (
+            <Card title={`${tt('finalVideo')} · ${compose.durationSec.toFixed(1)}s`}>
+              <video className="vr-video" style={{ maxHeight: 260 }} controls src={mediaUrl(props.run.id, compose.file, { version: compose.createdAt })} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                <div className="vr-row" style={{ gap: 8, alignItems: 'center' }}>
+                  <span className="vr-hint">{tt('platform')}：</span>
+                  <select className="vr-input" style={{ width: 160 }} value="channels" disabled>
+                    <option value="channels">视频号</option>
+                  </select>
+                </div>
+                <div className="vr-field">
+                  <label className="vr-label">{tt('publishTitle')}</label>
+                  <input className="vr-input" value={title} onChange={event => setTitle(event.target.value)} placeholder="可留空" />
+                </div>
+                <div className="vr-field">
+                  <label className="vr-label">{tt('publishDesc')}</label>
+                  <textarea className="vr-textarea" rows={4} value={description} onChange={event => setDescription(event.target.value)} />
+                  <span className="vr-hint">{tt('publishDescHint')}</span>
+                </div>
+                <div className="vr-row" style={{ gap: 8, alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="vr-btn"
+                    data-variant="primary"
+                    disabled={props.busy || running || description.trim() === ''}
+                    onClick={() => props.onPublish({ title: title.trim(), description: description.trim() })}
+                  >
+                    {running ? `${publish?.status === 'waiting-login' ? '等待扫码登录…' : publish?.status === 'uploading' ? '上传中…' : '发表中…'}` : tt('publishNow')}
+                  </button>
+                  {publish !== undefined && <span className="vr-hint">{publish.message}</span>}
+                </div>
+              </div>
+            </Card>
+          )}
+      {publish !== undefined && (
+        <Card title={tt('publishStatus')}>
+          <div className="vr-kv"><span>{tt('status')}</span><span>{publish.status}</span></div>
+          {publish.postUrl !== undefined && publish.postUrl !== '' && (
+            <div className="vr-kv"><span>{tt('publishedUrl')}</span><span><a href={publish.postUrl} target="_blank" rel="noopener">{publish.postUrl}</a></span></div>
+          )}
+          {publish.error !== undefined && <div className="vr-banner" data-tone="err">{publish.error}</div>}
+          {publish.screenshot !== undefined && (
+            <div style={{ marginTop: 8 }}>
+              <div className="vr-hint">{tt('publishScreenshot')}</div>
+              <img src={mediaUrl(props.run.id, publish.screenshot)} alt="publish" style={{ maxWidth: '100%', borderRadius: 10 }} loading="lazy" />
+            </div>
+          )}
+        </Card>
+      )}
+    </>
+  )
 }
 
 function StageCompose(props: StageComposeProps): JSX.Element {

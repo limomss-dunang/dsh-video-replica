@@ -1,6 +1,6 @@
 {
   "name": "dsh-video-replica",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "爆款视频复刻：抖音/视频号/小红书链接 → 自动下载解析 → AI 拆解 → AI 仿写 → 产品参考图匹配分镜 → AI 生成分镜视频 → ffmpeg 合成成片（DeepSeek Harness plugin）",
   "type": "module",
