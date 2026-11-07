@@ -384,6 +384,8 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
             title={`${tt('runNext')}：${STEP_LABELS[nextStep.id]}`}
             onClick={() => {
               if (nextStep === undefined) return
+              // 点「执行下一步」同时把界面切到那一步，标题、表单和日志都跟着走。
+              setSelected(nextStep.id)
               void act(() => api.runStep(run.id, nextStep.id))
             }}
           >
