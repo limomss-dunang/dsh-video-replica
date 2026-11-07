@@ -172,7 +172,7 @@ export function rewritePrompt(options: {
   const productLine = options.hasProductImages
     ? `- 参考图：用户提供了 ${options.productNames.length} 张产品/主体图（文件名：${options.productNames.join('、') || '已上传'}）。
 - 要求：把画面里的核心主体替换成该产品，产品的外观、材质、颜色、包装文字以参考图为准；分镜的 visualPrompt 必须写成「产品以什么方式出现在画面里」，不要出现其它品牌。`
-    : '- 本次没有上传产品图：按「纯复刻」处理，忠实复刻源片的题材与画面，严禁植入任何产品、品牌或带货话术。'
+    : '- 本次为纯复刻（没有主体替换）：忠实复刻源片的题材与画面，严禁植入品牌、卖点或带货话术。'
   const seconds = Math.round(options.targetDurationSec)
   const occasionName = analysis.occasion?.name?.trim() ?? ''
   const occasionWhy = analysis.occasion?.why?.trim() ?? ''
@@ -210,7 +210,7 @@ ${dna}
 ${productLine}
 ${options.hasProductImages
     ? `- 用户给的产品/卖点简述：${options.productBrief.trim() === '' ? '（未填写）' : options.productBrief.trim()}`
-    : '- 纯复刻模式：本次不植入任何产品、品牌或卖点诉求（新建任务里填写的卖点简述本轮不参与创作）。'}
+    : '- 纯复刻模式：不植入品牌或卖点诉求（新建任务里填写的卖点简述本轮不参与创作）。'}
 
 # 创作边界（最重要，先读这一节）
 
@@ -224,7 +224,7 @@ ${options.hasProductImages
 ${options.mode === 'faithful'
     ? `## 本次模式：忠于原片（faithful）
 - **保留**：题材、节令、角色类型（例如「两只小动物」）、场景类型（例如「鱼眼门禁视角」）、桥段顺序、镜头节奏。
-- **可以换**：具体台词措辞、表演细节、道具材质、画面构图微调；有产品图时用产品替换主体。
+- **可以换**：具体台词措辞、表演细节、道具材质、画面构图微调${options.hasProductImages ? '；有产品图时把它替换成画面主体' : ''}。
 - **不许**：换成与源片无关的题材或桥段；不许丢掉节令；不许照抄源片原句台词。
 - 三个版本的差异：A 最贴近原片；B 换钩子顺序（先给结果再回放）；C 换叙述视角（仍保持同一题材与节令）。`
     : `## 本次模式：重新设计（redesign）
@@ -265,7 +265,7 @@ ${options.mode === 'faithful'
    - 只写可见事实，不写"电影感、高级感、氛围感"这类形容词；
    - 不要在一镜里同时写两种运镜（例如"固定"+"推近"）；
    - 不要写互相抵消的风格词（电影感 + 纪实手持、胶片感 + 4K 超清、慢动作 + 高速动作）。
-9. productPlacement 说明该镜头里产品如何出现（手持特写 / 使用中 / 桌面静物 / 递出…，≤20 字）；纯复刻时写「无产品」。
+9. productPlacement：只有在需要替换主体时才写它在该镜如何出现（手持特写 / 使用中 / 桌面静物 / 递出…，≤20 字）；纯复刻一律写「无」。
 10. 第一镜必须在 3 秒内给出钩子（复用源片的钩子类型）；每 15–20 秒要出现一次新信息、关系变化或小反转。
 11. notes 说明该版如何继承源片 DNA，≤80 字。
 
@@ -287,7 +287,7 @@ ${options.mode === 'faithful'
          "voiceover": "短句口播", "onscreenText": "画面大字",
          "visualPrompt": "中近景，主体在画面右侧，抬手做出一次动作",
          "lighting": "左侧柔和窗光，暖色调", "environment": "锅上蒸汽缓慢升起", "emotion": "期待", "speaker": "柴犬",
-         "productPlacement": "产品出现方式"}
+         "productPlacement": "${options.hasProductImages ? '主体在该镜的呈现方式' : '无'}"}
       ]
     }
   ],
@@ -353,19 +353,19 @@ const subject = anchors.length === 0
       return `\n[角色锚定] ${lines}。画面里出现的每个角色都必须与对应设定图**完全一致**：同样的物种/身份、毛色与花纹分布、眼睛颜色、体型比例、配饰与穿着；只改变姿态、动作、场景与光线。不要换品种、不要改毛色、不要换配饰、不要少人。本镜必须出现的角色：${names}。`
     })()
 const material = !options.hasProduct
-    ? '\n[素材] 无产品参考图：画面中不出现任何品牌 Logo、广告文字或包装文字。'
+    ? '\n[素材] 本次为纯复刻：画面里不出现品牌 Logo、广告文字或包装文字。'
     : textMode
       ? `\n[产品] 按下面的文字描述把产品画进画面（本图不提供产品参考图）：${options.productVisual === '' ? '一个干净的产品瓶' : clean(options.productVisual)}。\n产品在本镜的呈现：${placement}。产品外形、主色与材质必须与描述一致，不要出现品牌 Logo 或文字。`
       : `\n[素材] 图片1 = 产品外观锚定。${options.productVisual === '' ? '产品的容器外形、主色、材质与包装文字严格以图片1为准。' : `产品视觉身份证：${clean(options.productVisual)}；容器外形、主色、材质、包装文字与朝向严格以图片1为准。`}\n产品在本镜的呈现：${placement}。`
 
   return `为镜头 SH${String(options.segment.index).padStart(2, '0')} 生成一张适合「图生视频」的首帧。
 [构图] 景别：${shotType}${camera === '' ? '' : `；运镜意图：${camera}（首帧是动作开始前的定格，镜头参数只影响构图）`}。画面内容：${options.segment.visualPrompt}
-[起始姿态] 只表现动作开始前的清晰状态：主体姿态、手部、产品与空间关系完整，产品落点符合支撑与重力；不要把后续动作提前画出来，不要出现运动残影。${subject}${material}
+[起始姿态] 只表现动作开始前的清晰状态：${options.hasProduct ? '主体姿态、手部、产品与空间关系完整，产品落点符合支撑与重力' : '主体姿态、手部（或前爪）与道具、空间的关系完整，落点符合支撑与重力'}；不要把后续动作提前画出来，不要出现运动残影。${subject}${material}
 [反讽落地] 如果本镜是中文双关/俗语的字面化（画饼、背锅、摸鱼、穿小鞋…），必须把那个**字面物件**画成**真实存在的实物**：画饼要画成一张真实的、刚出锅的大饼（金黄、有焦斑、冒热气，像真食物），背锅要画成真实的铁锅，不能画成饼图、图标、示意图、剪贴画或文字。形状、尺寸、位置、颜色都要具体可辨。
 ${lighting === '' ? '' : `[光线] ${lighting}；光向全片保持一致。\n`}${environment === '' ? '' : `[环境动态] ${environment}（首帧里保持静止或轻微可辨，不要抢主体）。\n`}[画面] 主体清晰、前景/中景/背景分层；画面下方留出干净区域便于后期字幕；画面内不生成任何文字。
 ${options.hasProduct ? '[合规] 如有真人风格人物，请让其为全新虚构角色（五官、发型与任何真实人物不同），避免与真实人物雷同。\n' : ''}
 [风格] ${style.prompt}${options.styleHint.trim() === '' ? '' : `；参考拆解出的视觉风格：${options.styleHint.trim()}`}。
-[输出限制] 单张静帧；无文字、字幕、Logo、水印；不出现其它品牌产品或多余人物。`
+[输出限制] 单张静帧；无文字、字幕、Logo、水印；不出现多余的品牌元素或多余人物。`
 }
 
 /**
@@ -453,7 +453,9 @@ export function videoPrompt(options: {
   const style = `${frameStyle.label === '写实摄影' ? '真实摄影质感' : frameStyle.label}${options.styleHint.trim() === '' ? '，光影柔和，色彩自然' : `；${options.styleHint.trim()}`}`
   const outputLimits = [
     '画面干净，主体清晰，单镜一个主动作，动作连贯自然',
-    '主体面部与产品外观稳定，不出现多余肢体或重复人物',
+    options.hasProduct
+      ? '主体面部与产品外观稳定，不出现多余肢体或重复人物'
+      : '主体（角色）外观稳定，不出现多余肢体、重复人物或额外角色',
     '画面内不出现文字、字幕、Logo 与水印',
   ].join('；')
 
