@@ -1558,6 +1558,36 @@ export async function stepCompose(ctx: PipelineContext): Promise<void> {
             ffmpegPath: config.media.ffmpegPath,
           }).catch(() => [])
           const usable = windows.filter(item => item.endSec - item.startSec >= 0.5)
+
+          // 字幕文案来源 = 脚本台词时：只用语音窗口定时间，文字用脚本（成片原声念错时不跟着错）。
+          if ((run.subtitleText ?? 'asr') === 'script') {
+            const chunk = buildChunks(variant.segments).find(item => item.index === segment.segmentIndex)
+            const lines = (chunk?.shots ?? []).map(shot => subtitleText(shot)).filter(item => item.trim() !== '')
+            const spanWindows = usable.length > 0 ? usable : [{ startSec: 0, endSec: duration }]
+            const spanStart = spanWindows[0].startSec
+            const spanEnd = spanWindows[spanWindows.length - 1].endSec
+            if (lines.length > 0 && spanEnd > spanStart) {
+              const totalChars = lines.reduce((sum, line) => sum + line.length, 0) || 1
+              let cursor = spanStart
+              for (const [lineIndex, line] of lines.entries()) {
+                const isLast = lineIndex === lines.length - 1
+                const next = isLast
+                  ? spanEnd
+                  : Math.min(spanEnd, cursor + Math.max(0.6, (spanEnd - spanStart) * (line.length / totalChars)))
+                if (next > cursor + 0.15) {
+                  asrCues.push({
+                    startSec: asrClock + cursor,
+                    endSec: asrClock + next,
+                    text: line,
+                  })
+                }
+                cursor = next
+              }
+            }
+            asrClock += duration
+            continue
+          }
+
           if (usable.length >= 2) {
             for (const [windowIndex, window] of usable.entries()) {
               checkAbort(ctx)

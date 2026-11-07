@@ -402,6 +402,12 @@ export interface RunState {
   publish?: PublishState
   /** 本次仿写方式覆盖（不填则用设置里的全局默认）。 */
   rewriteMode?: RewriteMode
+  /**
+   * 字幕文案来源（原声模式生效）：
+   * - `asr`：如实转写分镜原声（默认）；
+   * - `script`：用脚本台词，时间仍按原声语音窗口对齐。
+   */
+  subtitleText?: 'asr' | 'script'
   steps: StepState[]
   source?: SourceMeta
   analysis?: AnalysisReport

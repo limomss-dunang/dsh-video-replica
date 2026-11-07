@@ -171,6 +171,10 @@ export interface Copy {
   previewSubtitles: string
   previewTtsHint: string
   previewSubsHint: string
+  subtitleTextLabel: string
+  subtitleTextAsr: string
+  subtitleTextScript: string
+  subtitleTextHint: string
   copyPath: string
   captionGenerating: string
   captionRegenerate: string
@@ -383,6 +387,10 @@ export const zh: Copy = {
   previewSubtitles: '预览字幕',
   previewTtsHint: '只跑 TTS，按成片的音色逐段合成，不消耗视频/图片额度',
   previewSubsHint: '按脚本和分镜时长估算字幕时间轴，可直接核对断句与字号',
+  subtitleTextLabel: '字幕文案',
+  subtitleTextAsr: '跟随原声',
+  subtitleTextScript: '用脚本台词',
+  subtitleTextHint: '跟随原声 = 如实转写分镜音轨；用脚本台词 = 文字取脚本，时间仍按原声语音窗口对齐（原声念错时不跟着错）',
   copyPath: '复制路径',
   captionGenerating: '正在生成标题和话题…',
   captionRegenerate: '换一版文案',
@@ -595,6 +603,10 @@ export const en: Copy = {
   previewSubtitles: 'Preview subtitles',
   previewTtsHint: 'Runs TTS only — same voices as the final cut, no image or video cost',
   previewSubsHint: 'Estimates subtitle timing from the script and shot durations',
+  subtitleTextLabel: 'Subtitle text',
+  subtitleTextAsr: 'Follow audio',
+  subtitleTextScript: 'Use script',
+  subtitleTextHint: 'Follow audio transcribes the clip audio; Use script keeps your script wording but aligns timing to the spoken windows.',
   copyPath: 'Copy path',
   captionGenerating: 'Writing the title and topics…',
   captionRegenerate: 'Another version',

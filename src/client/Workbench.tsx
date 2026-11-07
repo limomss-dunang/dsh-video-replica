@@ -585,6 +585,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                         step={stepState as StepState}
                         onRun={() => void act(() => api.runStep(run.id, 'compose'))}
                         onAudioSource={value => void act(() => api.setAudioSource(run.id, value))}
+        onSubtitleText={value => void act(() => api.setSubtitleText(run.id, value))}
                       />
                     )}
                   </>
@@ -1634,6 +1635,7 @@ function StageGenerate(props: StageGenerateProps): JSX.Element {
 }
 
 interface StageComposeProps {
+  onSubtitleText: (value: 'asr' | 'script') => void
   api: VideoReplicaApi
   run: RunState
   step: StepState
@@ -1833,6 +1835,27 @@ function StageCompose(props: StageComposeProps): JSX.Element {
         })}
         <span className="vr-hint">{tt('audioSourceHint')}</span>
       </div>
+      {!usesTts && (
+        <div className="vr-row" style={{ gap: 8, alignItems: 'center', margin: '0 0 8px' }}>
+          <span className="vr-hint">{tt('subtitleTextLabel')}：</span>
+          {(['asr', 'script'] as const).map(value => {
+            const active = (props.run.subtitleText ?? 'asr') === value
+            return (
+              <button
+                key={value}
+                type="button"
+                className="vr-btn"
+                data-size="sm"
+                data-variant={active ? 'primary' : 'default'}
+                onClick={() => props.onSubtitleText(value)}
+              >
+                {value === 'asr' ? tt('subtitleTextAsr') : tt('subtitleTextScript')}
+              </button>
+            )
+          })}
+          <span className="vr-hint">{tt('subtitleTextHint')}</span>
+        </div>
+      )}
       <Card title="合成前预览">
         <div className="vr-row" style={{ gap: 8, alignItems: 'center' }}>
           {usesTts && (

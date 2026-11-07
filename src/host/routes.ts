@@ -557,6 +557,12 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
         await store.flush(runId)
         break
       }
+      case 'set-subtitle-text': {
+        // 字幕文案来源：原声模式下来自真实转写还是脚本台词。
+        run.subtitleText = asString(body.value) === 'script' ? 'script' : 'asr'
+        await store.flush(runId)
+        break
+      }
       case 'set-rewrite-mode': {
         // 复刻方式：run 级覆盖（老项目默认 faithful，避免把节令/题材换掉）。
         run.rewriteMode = asString(body.mode) === 'redesign' ? 'redesign' : 'faithful'

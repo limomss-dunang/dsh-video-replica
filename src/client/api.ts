@@ -188,6 +188,10 @@ export class VideoReplicaApi {
     return this.action({ runId, action: 'preview-subtitles' }) as unknown as Promise<{ items?: Array<{ index: number, startSec: number, endSec: number, text: string, segmentIndex: number }>, file?: string }>
   }
 
+  setSubtitleText(runId: string, value: 'asr' | 'script'): Promise<unknown> {
+    return this.action({ runId, action: 'set-subtitle-text', value })
+  }
+
   setRewriteMode(runId: string, mode: 'faithful' | 'redesign'): Promise<unknown> {
     return this.action({ runId, action: 'set-rewrite-mode', mode })
   }
