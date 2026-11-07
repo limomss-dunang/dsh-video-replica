@@ -90,6 +90,11 @@ html[${ACTIVE_ATTR}] :is([data-pane="conversation"],[class*="centerCol"])>:not($
 @keyframes vr-pulse{0%,100%{box-shadow:0 0 0 0 rgba(59,110,246,.35)}50%{box-shadow:0 0 0 4px rgba(59,110,246,.08)}}
 .vr-step-text{display:flex;flex-direction:column;min-width:0;flex:1;gap:2px}
 .vr-step-label{font-size:12.5px;font-weight:600;color:inherit}
+.vr-paths{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-2,rgba(127,127,127,.06))}
+.vr-path-line{display:flex;gap:8px;align-items:flex-start}
+.vr-path-label{flex:0 0 56px;font-size:11.5px;line-height:1.5;color:var(--dsw-alias-text-3,#8a8f99)}
+.vr-path{flex:1;min-width:0;font-size:11.5px;line-height:1.5;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;white-space:normal;color:var(--dsw-alias-text-1,inherit)}
+.vr-step-path{display:block;margin-top:1px;font-size:10.5px;line-height:1.35;color:var(--dsw-alias-text-3,#8a8f99);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .vr-step-msg{font-size:11px;color:var(--dsw-alias-label-secondary,color-mix(in srgb,currentColor 62%,transparent));overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;max-width:150px}
 .vr-step[data-status="failed"] .vr-step-msg{color:var(--dsw-alias-state-error-primary,#d92d20)}

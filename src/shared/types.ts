@@ -80,6 +80,8 @@ export interface SourceMeta {
   provider: ParseProvider
   /** 运行目录内的相对文件名，例如 source.mp4 */
   videoFile: string
+  /** 源视频的绝对路径（下载落盘后写入，界面直接展示/复制）。 */
+  filePath?: string
   coverFile?: string
   title: string
   author?: string
@@ -366,6 +368,8 @@ export interface PublishState {
 
 export interface RunState {
   id: string
+  /** 本次任务的运行目录绝对路径（素材、成片、日志都在它下面）。 */
+  workDir?: string
   title: string
   createdAt: number
   updatedAt: number

@@ -111,6 +111,11 @@ export class RunStore {
       const text = await readFile(file, 'utf8')
       const parsed = JSON.parse(text) as RunState
       if (typeof parsed?.id !== 'string') return undefined
+      if (parsed.workDir === undefined || parsed.workDir === '') parsed.workDir = this.runDir(parsed.id)
+      // 老任务补源视频绝对路径，界面直接能展示/复制。
+      if (parsed.source !== undefined && (parsed.source.filePath === undefined || parsed.source.filePath === '')) {
+        parsed.source.filePath = join(parsed.workDir, parsed.source.videoFile)
+      }
       // 版本迁移：老运行缺新步骤（如第 7 步「一键发布」）时补成 pending，并按 STEP_IDS 排序。
       parsed.steps = Array.isArray(parsed.steps) ? parsed.steps : []
       for (const id of STEP_IDS) {
@@ -166,6 +171,7 @@ export class RunStore {
     const now = Date.now()
     const run: RunState = {
       id,
+      workDir: this.runDir(id),
       title: input.title,
       createdAt: now,
       updatedAt: now,

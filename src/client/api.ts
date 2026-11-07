@@ -172,6 +172,10 @@ export class VideoReplicaApi {
     return this.action({ runId, action: 'regenerate-frame', segmentIndex, ...(prompt === undefined ? {} : { prompt }) })
   }
 
+  reveal(runId: string, kind: 'workdir' | 'source'): Promise<unknown> {
+    return this.action({ runId, action: 'reveal', kind })
+  }
+
   resetAnchor(runId: string): Promise<unknown> {
     return this.action({ runId, action: 'reset-anchor' })
   }

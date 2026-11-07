@@ -20,6 +20,17 @@ import type {
 import { ASPECT_RATIOS, CAMERA_MOVES, PLATFORM_LABELS, SHOT_TYPES, STEP_IDS, STEP_LABELS } from '../shared/types.ts'
 import type { VideoReplicaApi } from './api.ts'
 import { mediaUrl } from './api.ts'
+
+/** 打开任务目录 / 源视频所在目录（宿主用系统文件管理器打开）。 */
+function liveReveal(api: VideoReplicaApi, run: RunState, kind: 'workdir' | 'source'): void {
+  void api.reveal(run.id, kind).catch(() => {})
+}
+
+/** 复制路径到剪贴板（失败静默，不影响界面）。 */
+function liveCopy(text: string): void {
+  if (text === '') return
+  void navigator.clipboard?.writeText(text).catch(() => {})
+}
 import type { PromptPreviewPayload } from './api.ts'
 import { CONFIG_SAVED_EVENT, PANEL_OPEN_EVENT } from '../shared/protocol.ts'
 import { copy, tt } from './locales.ts'
@@ -410,6 +421,9 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                   <span className="vr-step-msg">
                     {step.stale === true ? tt('stepStale') : (step.message ?? STATUS_TEXT[step.status])}
                   </span>
+                  {step.id === 'parse' && run?.source?.filePath !== undefined && (
+                    <span className="vr-step-path" title={run.source.filePath}>{run.source.filePath}</span>
+                  )}
                   {step.status === 'running' && <ProgressBar value={step.progress} />}
                 </span>
               </button>
@@ -942,7 +956,26 @@ function StageParse(props: StageParseProps): JSX.Element {
               {run.source.author !== undefined && <div className="vr-kv"><span>作者</span><span>{run.source.author}</span></div>}
               <div className="vr-kv"><span>{tt('platform')}</span><span>{PLATFORM_LABELS[run.source.platform]} · {run.source.provider}</span></div>
               <div className="vr-kv"><span>{tt('duration')}</span><span>{run.source.durationSec === undefined ? '—' : `${run.source.durationSec.toFixed(1)}s`}</span></div>
-              <div className="vr-kv"><span>文件</span><span>{run.source.videoFile}</span></div>
+              <div className="vr-paths">
+                <div className="vr-path-line">
+                  <span className="vr-path-label">源视频</span>
+                  <code className="vr-path">{run.source.filePath ?? run.source.videoFile}</code>
+                </div>
+                {run.workDir !== undefined && (
+                  <div className="vr-path-line">
+                    <span className="vr-path-label">任务目录</span>
+                    <code className="vr-path">{run.workDir}</code>
+                  </div>
+                )}
+                <div className="vr-row" style={{ gap: 8, marginTop: 6 }}>
+                  <button type="button" className="vr-btn" data-size="sm" onClick={() => liveReveal(props.api, run, 'source')}>
+                    {tt('openFolder')}
+                  </button>
+                  <button type="button" className="vr-btn" data-size="sm" onClick={() => liveCopy(run.source?.filePath ?? '')}>
+                    {tt('copyPath')}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
           <video className="vr-video" controls preload="metadata" src={mediaUrl(run.id, run.source.videoFile)} />

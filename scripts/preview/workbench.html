@@ -213,7 +213,8 @@
         at: now - 120_000,
       },
     },
-    source: { platform: 'douyin', provider: 'api', videoFile: 'source/source.mp4', title: '下午三点，同事递来的这一杯', author: '茉知味', durationSec: 31.4, width: 1080, height: 1920, fps: 30 },
+    workDir: 'C:\\Users\\Administrator\\.dsh\\storages\\dsh-video-replica\\runs\\20261108-001234-abcd12',
+    source: { platform: 'douyin', provider: 'api', videoFile: 'source/source.mp4', filePath: 'C:\\Users\\Administrator\\.dsh\\storages\\dsh-video-replica\\runs\\20261108-001234-abcd12\\source\\source.mp4', title: '下午三点，同事递来的这一杯', author: '茉知味', durationSec: 31.4, width: 1080, height: 1920, fps: 30 },
     productImages: [{ file: 'products/a.png', name: 'product-main.png', bytes: 240_000, createdAt: now - 600_000 }],
     frames: [
       { segmentIndex: 1, file: 'frames/ref-01.png', prompt: '……', mode: 'product', createdAt: now },
@@ -316,7 +317,7 @@
   requestAnimationFrame(() => {
     document.querySelector('[data-dvr-entry]')?.click()
     setTimeout(() => {
-      const stepMap = { input: null, analyze: 'analyze', rewrite: 'rewrite', match: 'match', generate: 'generate', compose: 'compose', publish: 'publish' }
+      const stepMap = { input: null, parse: 'parse', analyze: 'analyze', rewrite: 'rewrite', match: 'match', generate: 'generate', compose: 'compose', publish: 'publish' }
       const wanted = stepMap[stepParam]
       if (stepParam === 'settings') {
         // 直接把设置页渲染到中栏（预览专用）
@@ -333,7 +334,7 @@
       if (stepParam !== 'input') document.querySelector('.vr-run')?.click()
       setTimeout(() => {
         if (!wanted) return
-        const labels = { analyze: 'AI 拆解', rewrite: 'AI 仿写', match: '参考图匹配', generate: 'AI 生成视频', compose: '合成成片', publish: '一键发布' }
+        const labels = { parse: '解析下载', analyze: 'AI 拆解', rewrite: 'AI 仿写', match: '参考图匹配', generate: 'AI 生成视频', compose: '合成成片', publish: '一键发布' }
         const steps = [...document.querySelectorAll('.vr-step')]
         steps.find(step => step.textContent.includes(labels[wanted]))?.click()
       }, 250)

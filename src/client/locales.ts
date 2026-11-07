@@ -165,6 +165,8 @@ export interface Copy {
   publishedUrl: string
   publishScreenshot: string
   publishStatus: string
+  openFolder: string
+  copyPath: string
   captionGenerating: string
   captionRegenerate: string
   publishTopics: string
@@ -370,6 +372,8 @@ export const zh: Copy = {
   publishedUrl: '作品链接',
   publishScreenshot: '发布截图',
   publishStatus: '发布状态',
+  openFolder: '打开文件夹',
+  copyPath: '复制路径',
   captionGenerating: '正在生成标题和话题…',
   captionRegenerate: '换一版文案',
   publishTopics: '话题',
@@ -575,6 +579,8 @@ export const en: Copy = {
   publishedUrl: 'Post URL',
   publishScreenshot: 'Screenshot',
   publishStatus: 'Publish status',
+  openFolder: 'Open folder',
+  copyPath: 'Copy path',
   captionGenerating: 'Writing the title and topics…',
   captionRegenerate: 'Another version',
   publishTopics: 'Topics',

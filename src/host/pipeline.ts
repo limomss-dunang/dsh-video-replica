@@ -174,6 +174,7 @@ export async function stepParse(ctx: PipelineContext): Promise<void> {
     platform: source.platform,
     provider: source.provider,
     videoFile: `source/${source.videoFile}`,
+    filePath: abs(ctx, `source/${source.videoFile}`),
     title: source.title,
     ...(source.author === undefined ? {} : { author: source.author }),
     ...(source.durationSec === undefined ? {} : { durationSec: source.durationSec }),

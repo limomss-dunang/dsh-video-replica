@@ -24,6 +24,7 @@ import { chatComplete } from './providers/chat.ts'
 import type { DshModels } from './dsh.ts'
 import { completeText, describeEndpoint, resolveEndpoint, usesDsh } from './endpoint-resolver.ts'
 import type { EndpointConfig } from '../shared/types.ts'
+import { dirname } from 'node:path'
 import { regenerateFrame, regenerateSegment, type PipelineContext } from './pipeline.ts'
 import { composePostText, generateCaption } from './caption.ts'
 import { CAMERA_MOVES, SHOT_TYPES } from './prompts.ts'
@@ -487,6 +488,17 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
         }
         await store.flush(runId)
         await engine.start(runId, { from: 'publish', autoAdvance: false })
+        break
+      }
+      case 'reveal': {
+        // 在系统文件管理器里打开任务目录 / 源视频所在目录。
+        const kind = asString(body.kind, 'workdir')
+        const target = kind === 'source' && run.source?.filePath !== undefined
+          ? dirname(run.source.filePath)
+          : store.runDir(runId)
+        const { spawn } = await import('node:child_process')
+        const command = process.platform === 'win32' ? 'explorer' : process.platform === 'darwin' ? 'open' : 'xdg-open'
+        spawn(command, [target], { detached: true, stdio: 'ignore' }).unref()
         break
       }
       case 'reset-anchor': {

@@ -13,6 +13,7 @@ OUT = ROOT / "output" / "preview"
 # (文件名, 步骤, 主题, 宽, 高, 是否演示"执行中", 是否整页)
 SHOTS = [
     ("input-light", "input", "light", 1440, 900, False, False),
+    ("parse-light", "parse", "light", 1440, 900, False, True),
     ("analyze-light", "analyze", "light", 1440, 900, False, True),
     ("rewrite-light", "rewrite", "light", 1440, 900, False, True),
     ("match-dark", "match", "dark", 1440, 900, True, False),
