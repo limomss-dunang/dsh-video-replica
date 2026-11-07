@@ -521,8 +521,11 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
         return { run, busy: engine.isBusy(runId), items: rows, file }
       }
       case 'preview-tts': {
-        // 试听配音：只跑 TTS，不合成视频。
+        // 试听配音：只跑 TTS，不合成视频。成片用的是分镜原声时不该生成 TTS。
         const config = await configs.read()
+        if ((run.audioSource ?? config.compose.audioSource) === 'original') {
+          throw new Error('当前成片音轨选的是「分镜视频原声」，不会用 TTS。要试听配音，请先切到「TTS 配音」并重新合成。')
+        }
         const items = await previewNarration({
           config,
           ...(dsh === undefined ? {} : { dsh }),

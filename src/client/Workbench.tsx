@@ -1782,6 +1782,8 @@ function StageCompose(props: StageComposeProps): JSX.Element {
   const [tts, setTts] = useState<Array<{ index: number, speaker: string, voice: string, text: string, file: string }> | undefined>(undefined)
   const [subs, setSubs] = useState<{ rows: Array<{ index: number, startSec: number, endSec: number, text: string }>, file?: string } | undefined>(undefined)
   const [previewing, setPreviewing] = useState<'tts' | 'subs' | undefined>(undefined)
+  /** 成片音轨用的是分镜原声时，TTS 不会被使用，就不该出现「试听配音」。 */
+  const usesTts = (props.run.audioSource ?? 'tts') !== 'original'
   const [previewError, setPreviewError] = useState('')
 
   const runTtsPreview = async (): Promise<void> => {
@@ -1833,16 +1835,18 @@ function StageCompose(props: StageComposeProps): JSX.Element {
       </div>
       <Card title="合成前预览">
         <div className="vr-row" style={{ gap: 8, alignItems: 'center' }}>
-          <button type="button" className="vr-btn" disabled={previewing !== undefined} onClick={() => void runTtsPreview()}>
-            {previewing === 'tts' ? '合成中…' : tt('previewTts')}
-          </button>
+          {usesTts && (
+            <button type="button" className="vr-btn" disabled={previewing !== undefined} onClick={() => void runTtsPreview()}>
+              {previewing === 'tts' ? '合成中…' : tt('previewTts')}
+            </button>
+          )}
           <button type="button" className="vr-btn" disabled={previewing !== undefined} onClick={() => void runSubsPreview()}>
             {previewing === 'subs' ? '计算中…' : tt('previewSubtitles')}
           </button>
-          <span className="vr-hint">{tt('previewTtsHint')}</span>
+          <span className="vr-hint">{usesTts ? tt('previewTtsHint') : '当前音轨是「分镜视频原声」，成片不会用 TTS，所以不需要试听配音；字幕仍可预览。'}</span>
         </div>
         {previewError !== '' && <div className="vr-banner" data-tone="err">{previewError}</div>}
-        {tts !== undefined && (
+        {usesTts && tts !== undefined && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
             {tts.length === 0 && <span className="vr-hint">没有可试听的台词</span>}
             {tts.map(item => (
@@ -1860,7 +1864,11 @@ function StageCompose(props: StageComposeProps): JSX.Element {
         {subs !== undefined && (
           <div style={{ marginTop: 10 }}>
             <div className="vr-row" style={{ gap: 8, alignItems: 'center', marginBottom: 6 }}>
-              <span className="vr-hint">{subs.rows.length} 条 · 时间轴按字符数估算（成片会以实际语音时长对齐）</span>
+              <span className="vr-hint">
+                {subs.rows.length} 条 · {usesTts
+                  ? '时间轴按字符数估算，成片会以实际语音时长对齐'
+                  : '按脚本估算；原声模式下成片字幕会按原声语音识别对齐，可能有出入'}
+              </span>
               {subs.file !== undefined && (
                 <a className="vr-btn" data-size="sm" href={mediaUrl(props.run.id, subs.file, { download: true })} download>下载 ASS</a>
               )}
