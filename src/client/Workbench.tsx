@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type {
+import type { PublishPlatform,
   AnalysisReport,
   ConfigView,
   PluginConfig,
@@ -17,7 +17,7 @@ import type {
   StepId,
   StepState,
 } from '../shared/types.ts'
-import { ASPECT_RATIOS, CAMERA_MOVES, MANUAL_STEP_IDS, PLATFORM_LABELS, SHOT_TYPES, STEP_IDS, STEP_LABELS } from '../shared/types.ts'
+import { ASPECT_RATIOS, CAMERA_MOVES, MANUAL_STEP_IDS, PLATFORM_LABELS, PUBLISH_PLATFORMS, SHOT_TYPES, STEP_IDS, STEP_LABELS } from '../shared/types.ts'
 import type { VideoReplicaApi } from './api.ts'
 import { mediaUrl } from './api.ts'
 
@@ -575,7 +575,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                         step={stepState as StepState}
                         onRun={() => void act(() => api.runStep(run.id, 'publish'))}
                         onCaption={async () => { await act(() => api.caption(run.id), { label: '正在生成标题和话题…' }) }}
-                        onPublish={input => void act(() => api.publish(run.id, { platform: 'channels', ...input }))}
+                        onPublish={input => void act(() => api.publish(run.id, { ...input, platform: input.platform }))}
                       />
                     )}
                     {selected === 'compose' && (
@@ -1650,17 +1650,19 @@ interface StagePublishProps {
   step: StepState
   onRun: () => void
   onCaption: () => Promise<void>
-  onPublish: (input: { title: string, description: string, topics: string[] }) => void
+  onPublish: (input: { platform: PublishPlatform, title: string, description: string, topics: string[] }) => void
 }
 
-/** 第七步：一键发布（先只做视频号）。 */
+/** 第七步：一键发布（视频号 / 抖音，各自独立发布）。 */
 function StagePublish(props: StagePublishProps): JSX.Element {
   const compose = props.run.compose
-  const publish = props.run.publish
-  const caption = publish?.caption
-  const [title, setTitle] = useState(caption?.title ?? publish?.title ?? '')
-  const [description, setDescription] = useState(caption?.description ?? publish?.description ?? '')
-  const [topics, setTopics] = useState<string[]>(publish?.topics ?? caption?.topics ?? [])
+  const latest = props.run.publish
+  const [platform, setPlatform] = useState<PublishPlatform>(latest?.platform ?? 'channels')
+  const state = props.run.publishes?.[platform] ?? (latest?.platform === platform ? latest : undefined)
+  const caption = latest?.caption
+  const [title, setTitle] = useState(caption?.title ?? state?.title ?? '')
+  const [description, setDescription] = useState(caption?.description ?? state?.description ?? '')
+  const [topics, setTopics] = useState<string[]>(state?.topics ?? caption?.topics ?? [])
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState('')
   const askedAuto = useRef(false)
@@ -1678,7 +1680,6 @@ function StagePublish(props: StagePublishProps): JSX.Element {
     }
   }
 
-  // 新文案落盘后同步到输入框（用户改过的内容只在重新生成时被覆盖）。
   useEffect(() => {
     if (caption === undefined || caption.at === seenCaptionAt.current) return
     seenCaptionAt.current = caption.at
@@ -1687,15 +1688,17 @@ function StagePublish(props: StagePublishProps): JSX.Element {
     setTopics(caption.topics)
   }, [caption?.at])
 
-  // 第一次进入这一步、且还没有文案时，自动生成一版。
   useEffect(() => {
     if (askedAuto.current || compose === undefined || caption !== undefined) return
     askedAuto.current = true
     void regenerate()
   }, [compose === undefined, caption === undefined])
 
-  const running = publish?.status === 'waiting-login' || publish?.status === 'uploading' || publish?.status === 'publishing'
+  const running = state?.status === 'waiting-login' || state?.status === 'uploading' || state?.status === 'publishing'
   const ready = description.trim() !== '' && !generating
+  const platformLabel = PUBLISH_PLATFORMS.find(item => item.value === platform)?.label ?? platform
+  const donePlatforms = PUBLISH_PLATFORMS.filter(item => props.run.publishes?.[item.value]?.status === 'done')
+
   return (
     <>
       <StageHeader title={STEP_LABELS.publish} step={props.step} onRun={props.onRun} busy={props.busy} />
@@ -1704,13 +1707,26 @@ function StagePublish(props: StagePublishProps): JSX.Element {
         ? <Empty text={tt('composeMissing')} />
         : (
             <Card title={`${tt('finalVideo')} · ${compose.durationSec.toFixed(1)}s`}>
-              <video className="vr-video" style={{ maxHeight: 260 }} controls src={mediaUrl(props.run.id, compose.file, { version: compose.createdAt })} />
+              <video className="vr-video" style={{ maxHeight: 240 }} controls src={mediaUrl(props.run.id, compose.file, { version: compose.createdAt })} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
-                <div className="vr-row" style={{ gap: 8, alignItems: 'center' }}>
+                <div className="vr-row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span className="vr-hint">{tt('platform')}：</span>
-                  <select className="vr-input" style={{ width: 160 }} value="channels" disabled>
-                    <option value="channels">视频号</option>
-                  </select>
+                  {PUBLISH_PLATFORMS.map(item => {
+                    const active = item.value === platform
+                    const published = props.run.publishes?.[item.value]?.status === 'done'
+                    return (
+                      <button
+                        key={item.value}
+                        type="button"
+                        className="vr-btn"
+                        data-size="sm"
+                        data-variant={active ? 'primary' : 'default'}
+                        onClick={() => setPlatform(item.value)}
+                      >
+                        {item.label}{published ? ' ✓' : ''}
+                      </button>
+                    )
+                  })}
                   <button type="button" className="vr-btn" data-size="sm" disabled={generating || props.busy} onClick={() => void regenerate()}>
                     {generating ? tt('captionGenerating') : tt('captionRegenerate')}
                   </button>
@@ -1718,7 +1734,7 @@ function StagePublish(props: StagePublishProps): JSX.Element {
                 {genError !== '' && <div className="vr-banner" data-tone="err">{tt('captionFailed')}：{genError}</div>}
                 <div className="vr-field">
                   <label className="vr-label">{tt('publishTitle')}</label>
-                  <input className="vr-input" value={title} maxLength={16} onChange={event => setTitle(event.target.value)} placeholder={generating ? tt('captionGenerating') : '可留空'} />
+                  <input className="vr-input" value={title} maxLength={30} onChange={event => setTitle(event.target.value)} placeholder={generating ? tt('captionGenerating') : '可留空'} />
                 </div>
                 <div className="vr-field">
                   <label className="vr-label">{tt('publishTopics')}</label>
@@ -1751,27 +1767,42 @@ function StagePublish(props: StagePublishProps): JSX.Element {
                     className="vr-btn"
                     data-variant="primary"
                     disabled={props.busy || running || !ready}
-                    onClick={() => props.onPublish({ title: title.trim(), description: description.trim(), topics })}
+                    onClick={() => props.onPublish({ platform, title: title.trim(), description: description.trim(), topics })}
                   >
-                    {running ? `${publish?.status === 'waiting-login' ? '等待扫码登录…' : publish?.status === 'uploading' ? '上传中…' : '发表中…'}` : tt('publishNow')}
+                    {running
+                      ? (state?.status === 'waiting-login' ? '等待扫码登录…' : state?.status === 'uploading' ? '上传中…' : '发表中…')
+                      : `发布到${platformLabel}`}
                   </button>
-                  {publish !== undefined && <span className="vr-hint">{publish.message}</span>}
+                  {state !== undefined && <span className="vr-hint">{state.message}</span>}
                 </div>
               </div>
             </Card>
           )}
-      {publish !== undefined && (
+      {PUBLISH_PLATFORMS.some(item => props.run.publishes?.[item.value] !== undefined) && (
         <Card title={tt('publishStatus')}>
-          <div className="vr-kv"><span>{tt('status')}</span><span>{publish.status}</span></div>
-          {publish.postUrl !== undefined && publish.postUrl !== '' && (
-            <div className="vr-kv"><span>{tt('publishedUrl')}</span><span><a href={publish.postUrl} target="_blank" rel="noopener">{publish.postUrl}</a></span></div>
-          )}
-          {publish.error !== undefined && <div className="vr-banner" data-tone="err">{publish.error}</div>}
-          {publish.screenshot !== undefined && (
-            <div style={{ marginTop: 8 }}>
-              <div className="vr-hint">{tt('publishScreenshot')}</div>
-              <img src={mediaUrl(props.run.id, publish.screenshot)} alt="publish" style={{ maxWidth: '100%', borderRadius: 10 }} loading="lazy" />
-            </div>
+          {PUBLISH_PLATFORMS.map(item => {
+            const one = props.run.publishes?.[item.value]
+            if (one === undefined) return null
+            return (
+              <div key={item.value} style={{ padding: '6px 0', borderTop: '1px solid var(--dsw-alias-border-l1)' }}>
+                <div className="vr-row" style={{ gap: 8, alignItems: 'center' }}>
+                  <Pill tone={one.status === 'done' ? 'ok' : one.status === 'failed' ? 'err' : undefined}>{item.label}</Pill>
+                  <span className="vr-hint">{one.status === 'done' ? '已发布' : one.status === 'failed' ? '失败' : one.message}</span>
+                  {one.postUrl !== undefined && one.postUrl !== '' && (
+                    <a href={one.postUrl} target="_blank" rel="noopener" className="vr-hint">打开作品</a>
+                  )}
+                </div>
+                {one.error !== undefined && <div className="vr-banner" data-tone="err">{one.error}</div>}
+                {one.screenshot !== undefined && (
+                  <img src={mediaUrl(props.run.id, one.screenshot)} alt={one.screenshot} style={{ maxWidth: 320, borderRadius: 10, marginTop: 6 }} loading="lazy" />
+                )}
+              </div>
+            )
+          })}
+          {donePlatforms.length > 0 && donePlatforms.length < PUBLISH_PLATFORMS.length && (
+            <p className="vr-hint" style={{ marginTop: 8 }}>
+              已发布到 {donePlatforms.map(item => item.label).join('、')}；切换上方平台可继续发布到其它平台。
+            </p>
           )}
         </Card>
       )}

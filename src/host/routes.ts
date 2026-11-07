@@ -467,7 +467,7 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
       case 'publish': {
         // 第七步：带发布参数启动（手动步骤，不走自动推进）。
         const platform = asString(body.platform, 'channels')
-        if (platform !== 'channels') throw new Error('暂只支持发布到视频号')
+        if (platform !== 'channels' && platform !== 'douyin') throw new Error('暂只支持发布到视频号 / 抖音')
         const config = await configs.read()
         const titleInput = asString(body.title).trim()
         const descriptionInput = asString(body.description).trim()
@@ -490,7 +490,7 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
         const description = descriptionInput !== '' ? descriptionInput : (caption?.description ?? '')
         const topics = topicsInput ?? caption?.topics ?? run.publish?.topics ?? []
         run.publish = {
-          platform: 'channels',
+          platform,
           ...(run.publish ?? {}),
           status: 'idle',
           message: '待发布',
@@ -499,6 +499,7 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
           topics,
           description: composePostText(description, topics),
         }
+        run.publishes = { ...(run.publishes ?? {}), [platform]: run.publish }
         await store.flush(runId)
         await engine.start(runId, { from: 'publish', autoAdvance: false })
         break

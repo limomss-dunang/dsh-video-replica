@@ -369,3 +369,226 @@ export async function savePublishShot(runDir: string, bytes: Uint8Array): Promis
   await writeFile(file, bytes)
   return `publish/${file.split(/[\\/]/).pop()}`
 }
+
+// ---------------------------------------------------------------------------
+// 抖音（创作者中心）
+// ---------------------------------------------------------------------------
+
+const DOUYIN_UPLOAD_URL = 'https://creator.douyin.com/creator-micro/content/upload'
+
+async function pageText(page: Page): Promise<string> {
+  const main = await page.evaluate(() => document.body?.innerText ?? '').catch(() => '')
+  let extra = ''
+  for (const frame of page.frames()) {
+    if (frame === page.mainFrame()) continue
+    const text = await frame.evaluate(() => document.body?.innerText ?? '').catch(() => '')
+    if (text !== '') extra += `\n${text}`
+  }
+  return `${main}${extra}`
+}
+
+/** 跨 frame 找第一个满足条件的 locator（抖音编辑器可能在子 frame 里）。 */
+async function firstLocatorAcrossFrames(
+  page: Page,
+  predicate: (frame: Frame) => Promise<number>,
+): Promise<import('playwright-core').Locator | undefined> {
+  for (const frame of page.frames()) {
+    const count = await predicate(frame).catch(() => 0)
+    if (count > 0) return frame.locator('*').first()
+  }
+  return undefined
+}
+
+/** 逐个 frame 试一个操作，返回第一个成功的位置（供上传/填写/点击复用）。 */
+async function inFirstFrame<T>(
+  page: Page,
+  action: (frame: Frame) => Promise<T | undefined>,
+): Promise<T | undefined> {
+  for (const frame of page.frames()) {
+    const result = await action(frame).catch(() => undefined)
+    if (result !== undefined) return result
+  }
+  return undefined
+}
+
+/** 等抖音进入「可上传」状态（登录完成、上传控件出现）。 */
+async function waitDouyinReady(page: Page, options: {
+  timeoutSec: number
+  log: (level: 'info' | 'warn', text: string) => void
+  signal?: AbortSignal
+}): Promise<void> {
+  const deadline = Date.now() + options.timeoutSec * 1000
+  let noted = 0
+  for (;;) {
+    if (options.signal?.aborted === true) throw new Error('已停止')
+    const text = await pageText(page)
+    const hasInput = await page.locator('input[type=file]').count().catch(() => 0) > 0
+    const loginWall = /扫码登录|验证码登录|密码登录/.test(text) && !/发布作品|上传视频/.test(text)
+    if (!loginWall && (hasInput || /发布作品|上传视频/.test(text))) return
+    if (Date.now() > deadline) throw new Error('抖音未登录或创作者中心加载超时，请重新点发布并扫码')
+    if (Date.now() - noted > 15_000) {
+      options.log('info', '等待扫码登录抖音创作者中心（在弹出的浏览器窗口里用抖音 App 扫码）…')
+      noted = Date.now()
+    }
+    await page.waitForTimeout(2000)
+  }
+}
+
+/** 等抖音视频上传/转码完成：上传中/进度消失且「发布」按钮可用。 */
+async function waitDouyinUpload(page: Page, options: {
+  timeoutSec: number
+  log: (level: 'info' | 'warn', text: string) => void
+  signal?: AbortSignal
+}): Promise<void> {
+  const deadline = Date.now() + options.timeoutSec * 1000
+  let noted = 0
+  let stable = 0
+  for (;;) {
+    if (options.signal?.aborted === true) throw new Error('已停止')
+    const text = await pageText(page)
+    if (/上传失败|转码失败|视频格式不支持/.test(text)) throw new Error('抖音提示上传/转码失败，请到浏览器窗口查看')
+    const uploading = /上传中|正在上传|取消上传|转码中/.test(text)
+    const ready = /作品描述|添加作品描述|发布/.test(text)
+    if (!uploading && ready) {
+      stable += 1
+      if (stable >= 2) return
+    } else {
+      stable = 0
+    }
+    if (Date.now() > deadline) throw new Error('等待抖音视频上传/转码超时，请到浏览器窗口查看进度')
+    if (Date.now() - noted > 20_000) {
+      const percent = text.match(/(\d{1,3})\s*%/)?.[1]
+      options.log('info', percent === undefined ? '抖音上传中…' : `抖音上传中… ${percent}%`)
+      noted = Date.now()
+    }
+    await page.waitForTimeout(3000)
+  }
+}
+
+/** 抖音：填标题与描述（两种编辑控件都兼容）。 */
+async function fillDouyinFields(page: Page, input: { description: string, title?: string }, log: (level: 'info' | 'warn', text: string) => void): Promise<void> {
+  // 标题
+  if (input.title !== undefined && input.title.trim() !== '') {
+    const filled = await inFirstFrame(page, async (frame) => {
+      const byPlaceholder = frame.locator('input[placeholder*="标题"]').first()
+      if (await byPlaceholder.count().catch(() => 0) === 0) return undefined
+      await byPlaceholder.fill(input.title?.trim() ?? '').catch(() => {})
+      return true
+    })
+    if (filled === true) log('info', '已填抖音作品标题')
+  }
+  // 描述（textarea 或 contenteditable）
+  const desc = input.description.trim()
+  if (desc === '') return
+  const byTextarea = await inFirstFrame(page, async (frame) => {
+    const textarea = frame.locator('textarea').first()
+    if (await textarea.count().catch(() => 0) === 0) return undefined
+    await textarea.fill(desc).catch(() => {})
+    return true
+  })
+  if (byTextarea === true) {
+    log('info', '已填抖音作品描述')
+    return
+  }
+  const byEditable = await inFirstFrame(page, async (frame) => {
+    const editable = frame.locator('div[contenteditable="true"], [data-placeholder*="描述"]').first()
+    if (await editable.count().catch(() => 0) === 0) return undefined
+    await editable.click().catch(() => {})
+    await editable.type(desc, { delay: 6 }).catch(() => {})
+    return true
+  })
+  if (byEditable === true) log('info', '已填抖音作品描述（富文本）')
+}
+
+/** 抖音：点发布并等结果。 */
+async function submitDouyin(page: Page, options: {
+  log: (level: 'info' | 'warn', text: string) => void
+  signal?: AbortSignal
+}): Promise<string> {
+  const clicked = await inFirstFrame(page, async (frame) => {
+    const exact = frame.getByRole('button', { name: /^发布$/ }).first()
+    const target = (await exact.count().catch(() => 0)) > 0 ? exact : frame.locator('button:has-text("发布")').first()
+    if (await target.count().catch(() => 0) === 0) return undefined
+    await target.scrollIntoViewIfNeeded().catch(() => {})
+    await target.click()
+    return true
+  })
+  if (clicked !== true) throw new Error('没找到抖音「发布」按钮：页面可能改版，浏览器窗口保留可手动点')
+  const deadline = Date.now() + 120_000
+  let confirmed = false
+  for (;;) {
+    if (options.signal?.aborted === true) throw new Error('已停止')
+    await page.waitForTimeout(2500)
+    const text = await pageText(page)
+    if (/发布成功|作品已发布|发布完成/.test(text) || /content\/manage/.test(page.url())) return page.url()
+    if (/发布失败|违规|不可发布|请先/.test(text)) {
+      const line = text.split('\n').map(item => item.trim()).find(item => /发布失败|违规|不可发布|请先/.test(item))
+      throw new Error(`抖音提示：${line ?? '发布失败'}`)
+    }
+    if (!confirmed) {
+      const confirmedClick = await inFirstFrame(page, async (frame) => {
+        const confirm = frame.getByRole('button', { name: /^(确认|确定|继续发布)$/ }).first()
+        if (await confirm.count().catch(() => 0) === 0) return undefined
+        await confirm.click().catch(() => {})
+        return true
+      })
+      if (confirmedClick === true) {
+        confirmed = true
+        options.log('info', '抖音出现二次确认，已自动确认')
+        continue
+      }
+    }
+    if (Date.now() > deadline) throw new Error('点了抖音发布但没等到成功提示，请到浏览器窗口确认')
+  }
+}
+
+/** 发布一条成片到抖音创作者中心。 */
+export async function publishToDouyin(options: PublishChannelsOptions): Promise<PublishChannelsResult> {
+  const { videoFile, description, title, signal, log, onProgress } = options
+  const { context, how } = await launchPublishBrowser()
+  log('info', `浏览器已启动（${how}），profile：${publishProfileDir()}`)
+  let keepOpen = options.keepOpenOnError !== false
+  try {
+    const page = context.pages()[0] ?? await context.newPage()
+    onProgress({ status: 'waiting-login', message: '打开抖音创作者中心…' })
+    await page.goto(DOUYIN_UPLOAD_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+    await page.waitForTimeout(2000)
+
+    onProgress({ status: 'waiting-login', message: '等待扫码登录抖音…' })
+    await waitDouyinReady(page, { timeoutSec: options.loginTimeoutSec ?? 300, log, ...(signal === undefined ? {} : { signal }) })
+    if (!/content\/upload/.test(page.url())) {
+      await page.goto(DOUYIN_UPLOAD_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+      await page.waitForTimeout(2000)
+    }
+
+    onProgress({ status: 'uploading', message: '上传成片…' })
+    log('info', `开始上传到抖音：${videoFile}`)
+    const uploaded = await inFirstFrame(page, async (frame) => {
+      const input = frame.locator('input[type="file"]').first()
+      const count = await input.count().catch(() => 0)
+      if (count === 0) return undefined
+      await input.setInputFiles(videoFile)
+      return true
+    })
+    if (uploaded !== true) throw new Error('抖音页面上没找到视频上传入口（input[type=file]），页面可能改版')
+    await waitDouyinUpload(page, { timeoutSec: options.uploadTimeoutSec ?? 900, log, ...(signal === undefined ? {} : { signal }) })
+    log('info', '抖音视频上传完成')
+
+    onProgress({ status: 'publishing', message: '填写标题和描述…' })
+    await fillDouyinFields(page, { description, ...(title === undefined ? {} : { title }) }, log)
+
+    onProgress({ status: 'publishing', message: '点发布…' })
+    const postUrl = await submitDouyin(page, { log, ...(signal === undefined ? {} : { signal }) })
+    const screenshot = await capture(page, options.runDir, 'douyin-ok')
+    log('info', '抖音发布成功')
+    keepOpen = false
+    return { postUrl, ...(screenshot === undefined ? {} : { screenshot }), browser: how }
+  } catch (error) {
+    const shot = await capture(context.pages()[0] as Page, options.runDir, 'douyin-fail').catch(() => undefined)
+    if (shot !== undefined) log('warn', `失败截图：${shot}`)
+    if (keepOpen) log('warn', '浏览器窗口保留：可以在窗口里手动完成或排查，处理完关掉即可')
+    throw error
+  } finally {
+    if (!keepOpen) await context.close().catch(() => {})
+  }
+}

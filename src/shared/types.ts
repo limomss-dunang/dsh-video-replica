@@ -330,8 +330,8 @@ export interface RunLogEntry {
   text: string
 }
 
-/** 支持的发布平台（先只做视频号）。 */
-export type PublishPlatform = 'channels'
+/** 支持的发布平台。 */
+export type PublishPlatform = 'channels' | 'douyin'
 
 export const PUBLISH_PLATFORMS: Array<{ value: PublishPlatform, label: string, loginUrl: string, createUrl: string }> = [
   {
@@ -339,6 +339,12 @@ export const PUBLISH_PLATFORMS: Array<{ value: PublishPlatform, label: string, l
     label: '视频号',
     loginUrl: 'https://channels.weixin.qq.com/login.html',
     createUrl: 'https://channels.weixin.qq.com/platform/post/create',
+  },
+  {
+    value: 'douyin',
+    label: '抖音',
+    loginUrl: 'https://creator.douyin.com/',
+    createUrl: 'https://creator.douyin.com/creator-micro/content/upload',
   },
 ]
 
@@ -400,6 +406,8 @@ export interface RunState {
   subjects?: Array<{ name: string, description: string, anchorFile: string, createdAt: number }>
   /** 第七步：一键发布的运行状态。 */
   publish?: PublishState
+  /** 各平台的发布结果（一次任务可以分别发到视频号 / 抖音）。 */
+  publishes?: Partial<Record<PublishPlatform, PublishState>>
   /** 本次仿写方式覆盖（不填则用设置里的全局默认）。 */
   rewriteMode?: RewriteMode
   /**

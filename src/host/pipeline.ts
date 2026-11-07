@@ -31,7 +31,7 @@ import type {
   TranscriptCue,
 } from '../shared/types.ts'
 import { PLATFORM_LABELS, aspectSizeOf } from '../shared/types.ts'
-import { publishToChannels } from './publish.ts'
+import { publishToChannels, publishToDouyin } from './publish.ts'
 import { loadImage, type ChatImage } from './providers/chat.ts'
 import { completeText, resolveEndpoint, usesDsh } from './endpoint-resolver.ts'
 import type { DshModels } from './dsh.ts'
@@ -1887,48 +1887,47 @@ async function stepPublish(ctx: PipelineContext): Promise<void> {
     ...(title === '' ? {} : { title }),
     startedAt: Date.now(),
   }
+  run.publishes = { ...(run.publishes ?? {}), [platform]: run.publish }
   touch(ctx)
 
+  const syncState = (patch: Partial<NonNullable<RunState['publish']>>): void => {
+    if (run.publish === undefined) return
+    Object.assign(run.publish, patch)
+    run.publishes = { ...(run.publishes ?? {}), [platform]: run.publish }
+    touch(ctx)
+  }
+
   try {
-    const result = await publishToChannels({
+    const options = {
       videoFile,
       description,
       ...(title === '' ? {} : { title }),
       signal: ctx.signal,
       runDir: dirOf(ctx),
-      log: (level, text) => ctx.log('publish', level, text),
-      onProgress: progress => {
-        if (run.publish !== undefined) {
-          run.publish.status = progress.status
-          run.publish.message = progress.message
-        }
+      log: (level: 'info' | 'warn', text: string) => ctx.log('publish', level, text),
+      onProgress: (progress: { status: 'waiting-login' | 'uploading' | 'publishing', message: string }) => {
+        syncState({ status: progress.status, message: progress.message })
         const ratio = progress.status === 'waiting-login' ? 0.15 : progress.status === 'uploading' ? 0.45 : 0.8
         ctx.setStep('publish', { progress: ratio, message: progress.message })
-        touch(ctx)
       },
-    })
-    const screenshot = result.screenshot
-    run.publish = {
-      platform,
+    }
+    const result = platform === 'douyin'
+      ? await publishToDouyin(options)
+      : await publishToChannels(options)
+    syncState({
       status: 'done',
       message: '已发布',
-      description,
-      ...(title === '' ? {} : { title }),
       ...(result.postUrl === '' ? {} : { postUrl: result.postUrl }),
-      ...(screenshot === undefined ? {} : { screenshot }),
+      ...(result.screenshot === undefined ? {} : { screenshot: result.screenshot }),
       startedAt: run.publish?.startedAt ?? Date.now(),
       endedAt: Date.now(),
-    }
-    ctx.setStep('publish', { status: 'done', progress: 1, message: '已发布' })
+    })
+    ctx.log('publish', 'info', `${platform === 'douyin' ? '抖音' : '视频号'}发布完成`)
+    ctx.setStep('publish', { status: 'done', progress: 1, message: `已发布到${platform === 'douyin' ? '抖音' : '视频号'}` })
     touch(ctx)
   } catch (error) {
     const text = messageOf(error)
-    if (run.publish !== undefined) {
-      run.publish.status = 'failed'
-      run.publish.message = text
-      run.publish.error = text
-      run.publish.endedAt = Date.now()
-    }
+    syncState({ status: 'failed', message: text, error: text, endedAt: Date.now() })
     throw error
   }
 }

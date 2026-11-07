@@ -124,6 +124,10 @@ export class RunStore {
         }
       }
       parsed.steps.sort((a, b) => STEP_IDS.indexOf(a.id) - STEP_IDS.indexOf(b.id))
+      // 老数据只有单个 run.publish：迁移成按平台分组的 publishes。
+      if (parsed.publish !== undefined) {
+        parsed.publishes = { ...(parsed.publishes ?? {}), [parsed.publish.platform]: parsed.publish }
+      }
       this.cache.set(runId, parsed)
       await stat(file).then(info => this.mtimes.set(runId, info.mtimeMs)).catch(() => {})
       return parsed
