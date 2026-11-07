@@ -514,6 +514,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                         busy={busy}
                         variant={variant}
                         step={stepState as StepState}
+                        onResetAnchor={() => void act(() => api.resetAnchor(run.id))}
                         onRegenerate={segmentIndex => void act(() => api.regenerateFrame(run.id, segmentIndex))}
                         onRun={() => void act(() => api.runStep(run.id, 'match'))}
                       />
@@ -1247,6 +1248,7 @@ interface StageMatchProps {
   busy: boolean
   variant: ScriptVariant | undefined
   step: StepState
+  onResetAnchor: () => void
   onRegenerate: (segmentIndex: number) => void
   onRun: () => void
 }
@@ -1334,6 +1336,30 @@ function StageMatch(props: StageMatchProps): JSX.Element {
     <>
       <StageHeader title={STEP_LABELS.match} step={props.step} onRun={props.onRun} busy={props.busy} />
       <PromptPreview api={props.api} runId={props.run.id} stage="match" />
+      {props.run.subject !== undefined && (
+        <Card title="角色锚点（保证每个分镜是同一个角色）">
+          <div className="vr-row" style={{ gap: 12, alignItems: 'flex-start' }}>
+            <img
+              src={mediaUrl(props.run.id, props.run.subject.anchorFile, { version: props.run.subject.createdAt })}
+              alt="subject anchor"
+              style={{ width: 140, borderRadius: 10 }}
+              loading="lazy"
+            />
+            <div style={{ flex: 1 }}>
+              <p className="vr-hint" style={{ marginTop: 0 }}>{props.run.subject.description}</p>
+              <button
+                type="button"
+                className="vr-btn"
+                data-size="sm"
+                disabled={props.busy}
+                onClick={() => props.onResetAnchor()}
+              >
+                {tt('regenerate')}（会清空参考图）
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
       <p className="vr-hint">{tt('refFramesTip')}</p>
       {frames.length === 0
         ? <Empty text={tt('matchMissing')} />

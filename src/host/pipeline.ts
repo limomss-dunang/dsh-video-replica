@@ -292,6 +292,9 @@ function normalizeAnalysis(raw: Record<string, unknown>, options: {
       pacing: asString(rhythm.beatPattern, ''),
     },
     summary: asString(raw.summary, ''),
+    ...(asString(raw.subjectIdentity ?? raw.subject_identity, '').trim() === ''
+      ? {}
+      : { subjectIdentity: asString(raw.subjectIdentity ?? raw.subject_identity, '').trim() }),
     ...(occasionName === '' ? {} : { occasion: { name: occasionName, why: occasionWhy } }),
     hook: {
       type: asString(hook.type, ''),
@@ -707,6 +710,47 @@ export async function stepMatch(ctx: PipelineContext): Promise<void> {
     ? ''
     : `${run.analysis.meta.style}${run.analysis.style.palette.length > 0 ? `，主色调 ${run.analysis.style.palette.slice(0, 3).join('/')}` : ''}${run.analysis.style.colorGrade === '' ? '' : `，${run.analysis.style.colorGrade}`}`
 
+
+  // 纯复刻（没有产品图）时，先生成「角色锚点」：一张角色设定图，各镜首帧都以它为参考，
+  // 否则每个分镜都会用文生图凭空造一个长得不一样的主角。
+  const subjectIdentity = run.analysis?.subjectIdentity?.trim()
+    ?? (run.analysis === undefined ? '' : `${run.analysis.style.subject}；${run.analysis.coreIdea}`)
+  const pureReplica = run.productImages.length === 0
+  if (pureReplica && subjectIdentity !== '' && run.subject === undefined) {
+    const anchorFile = 'subject/anchor.png'
+    ctx.log('match', 'info', `生成角色锚点：${subjectIdentity.slice(0, 60)}`)
+    ctx.setStep('match', { progress: 0.05, message: '生成角色锚点（保证每镜同一个角色）' })
+    touch(ctx)
+    try {
+      const imageEndpoint = await resolveEndpoint(ctx.dsh, config.image, '角色锚点')
+      await generateImage({
+        apiUrl: imageEndpoint.apiUrl,
+        apiKey: imageEndpoint.apiKey,
+        model: imageEndpoint.model,
+        protocol: imageEndpoint.fromDsh ? 'openai-images' : config.image.protocol,
+        ...(config.image.extraJson === undefined ? {} : { extraJson: config.image.extraJson }),
+        ...(config.image.timeoutSec === undefined ? {} : { timeoutSec: config.image.timeoutSec }),
+        prompt: `角色设定图：${subjectIdentity}。单个角色正面半身、正对镜头，完整清晰展现外形特征（毛色/花纹/眼睛/体型/配饰）；纯色干净背景，中性柔和光，画面里只有一个角色，无文字、无字幕、无 Logo，不要拼图、不要多视角排版。`,
+        aspect: ratioOf(`${aspect.width}x${aspect.height}`),
+        width: aspect.width,
+        height: aspect.height,
+        outFile: abs(ctx, anchorFile),
+        label: '角色锚点',
+        ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+      })
+      run.subject = { description: subjectIdentity, anchorFile, createdAt: Date.now() }
+      touch(ctx)
+    } catch (error) {
+      ctx.log('match', 'warn', `角色锚点生成失败（不影响流程，但各镜角色可能不一致）：${messageOf(error).slice(0, 160)}`)
+    }
+  }
+  const subjectAnchor = run.subject === undefined
+    ? undefined
+    : { description: run.subject.description, hasImage: true }
+  const subjectImage = run.subject === undefined
+    ? undefined
+    : await loadImage(abs(ctx, run.subject.anchorFile)).catch(() => undefined)
+
   const lightingBaseline = run.analysis?.shots.find(shot => shot.lighting.trim() !== '')?.lighting ?? ''
   const frames: StoryboardFrame[] = []
   for (const [index, segment] of variant.segments.entries()) {
@@ -847,6 +891,9 @@ export function buildPromptPreview(run: RunState, config: PluginConfig): {
         includeProductImage,
         productVisual: run.productVisual ?? '',
         styleHint,
+        ...(run.subject === undefined && run.analysis?.subjectIdentity === undefined
+          ? {}
+          : { subjectIdentity: run.subject?.description ?? run.analysis?.subjectIdentity ?? '' }),
         continuation: chunk.index > 1
             && chunk.shots[0]?.index === buildChunks(variant.segments)[chunk.index - 2]?.shots.at(-1)?.index,
         aspect,
@@ -1014,6 +1061,9 @@ export async function stepGenerate(ctx: PipelineContext): Promise<void> {
       includeProductImage,
       productVisual: run.productVisual ?? '',
       styleHint,
+      ...(run.subject === undefined && run.analysis?.subjectIdentity === undefined
+        ? {}
+        : { subjectIdentity: run.subject?.description ?? run.analysis?.subjectIdentity ?? '' }),
       continuation: chunk.index > 1
             && chunk.shots[0]?.index === buildChunks(variant.segments)[chunk.index - 2]?.shots.at(-1)?.index,
       aspect,

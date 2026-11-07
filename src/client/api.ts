@@ -172,6 +172,10 @@ export class VideoReplicaApi {
     return this.action({ runId, action: 'regenerate-frame', segmentIndex, ...(prompt === undefined ? {} : { prompt }) })
   }
 
+  resetAnchor(runId: string): Promise<unknown> {
+    return this.action({ runId, action: 'reset-anchor' })
+  }
+
   setRewriteMode(runId: string, mode: 'faithful' | 'redesign'): Promise<unknown> {
     return this.action({ runId, action: 'set-rewrite-mode', mode })
   }

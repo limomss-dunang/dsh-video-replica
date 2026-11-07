@@ -103,11 +103,14 @@ ${transcript}
 11. whyItWorks：为什么成立 —— 预期如何被违背（指令→字面结果→人类的无奈接受）、情绪节奏怎么走、观众代入点在哪。
 11.1 **只有当口播/画面文字里真的存在「被字面执行的词」时**，才在 creativeDevice 里写清这层语言歧义（例：「蛐蛐=议论」被错听成虫子、「尖子生=头发尖」被画成尖头）。没有这类词就不要硬套，更不要为了套模板编造不存在的信息。
 12. dna：3~6 条「这条视频靠什么爆」的**手法**，每条一句话且必须能迁移到完全不同的题材。禁止写具体角色/道具/场景（写「动物当创作者替身」，不要写「橘猫打字」）。
-13. occasion（节令/时效钩子，**必填字段，没有就写空对象**）：这条片子是不是靠「时间点」才成立？
+12.5 subjectIdentity（主角外形身份证，**必填**）：用 30–60 个汉字写清画面里**最主要的那个角色/主体**的可视特征——物种或身份、毛色/肤色/材质、花纹分布（如「耳尖、尾巴末端是深色」）、眼睛颜色、体型、标志性配饰或穿着。
+   - 这份描述会被用来生成角色设定图，并逐镜锁定同一个角色；所以要写**具体、可复现**的特征，不要写「一只可爱的猫」这种泛化描述。
+   - 多个角色时只写最主要那个，其余在 coreIdea 里说明。
+14. occasion（节令/时效钩子，**必填字段，没有就写空对象**）：这条片子是不是靠「时间点」才成立？
    - 如果是：写 {"name": "节令或热点名（例：万圣节/春节/开学季/双11/世界杯）", "why": "为什么必须在这个时间点发才有流量（一句话）"}。
    - 例子：万圣节萌宠装扮上门讨糖 → 观众当天正在过节，装扮+讨糖话术直接命中节日情绪。
    - 不是：写 {}。不要为了填而编。
-14. 只描述真实看到的内容，不要脑补不存在的画面。
+15. 只描述真实看到的内容，不要脑补不存在的画面。
 10. scores：钩子力 / 完播力 / 转化力 / 综合，0~10 的整数。
 
 
@@ -129,6 +132,7 @@ ${transcript}
   ],
   "rhythm": {"avgShotSec": 2.5, "beatPattern": "节奏描述", "cutPoints": [3.2, 6.8]},
   "style": {"palette": ["主色", "辅色"], "typography": "字幕排版", "music": "音乐风格", "colorGrade": "调色", "subject": "画面主体"},
+  "subjectIdentity": "主角外形身份证（30–60 字，具体到毛色/花纹/眼睛/体型/配饰）",
   "occasion": {"name": "节令/热点名，没有就写空字符串", "why": "为什么必须在这个时间点发"},
   "dna": ["可复用套路 1", "可复用套路 2"],
   "scores": {"hook": 8, "retention": 7, "conversion": 6, "overall": 7}
@@ -323,6 +327,8 @@ export function framePrompt(options: {
    * 方舟只信任 Seedream **文生图**产物，图生图产物会被判「疑似真实人物」。
    */
   productMode?: 'reference' | 'text'
+  /** 角色锚点：纯复刻时先有一张角色设定图，各镜首帧以它为参考。 */
+  subjectAnchor?: { description: string, hasImage: boolean }
 }): string {
   const textMode = options.productMode === 'text'
   const style = FRAME_STYLES[options.frameStyle ?? 'photo'] ?? FRAME_STYLES.photo
@@ -332,7 +338,12 @@ export function framePrompt(options: {
   const environment = clean(options.segment.environment ?? '')
 
   const placement = options.segment.productPlacement.trim() === '' ? '自然出现在画面里，与主体动作产生关系' : options.segment.productPlacement.trim()
-  const material = !options.hasProduct
+  const subject = options.subjectAnchor === undefined
+  ? ''
+  : options.subjectAnchor.hasImage
+    ? `\n[角色锚定] 图片${options.hasProduct ? 2 : 1} 是同一个角色的设定图。画面里的主角必须与它**完全一致**：同样的物种/身份、毛色与花纹分布、眼睛颜色、体型比例、配饰与穿着；只改变姿态、动作、场景与光线。不要换品种、不要改毛色、不要换配饰。角色外形身份证：${clean(options.subjectAnchor.description)}。`
+    : `\n[角色锁定] 主角外形必须与全片一致（同一个角色）：${clean(options.subjectAnchor.description)}；只改变姿态、动作、场景与光线。`
+const material = !options.hasProduct
     ? '\n[素材] 无产品参考图：画面中不出现任何品牌 Logo、广告文字或包装文字。'
     : textMode
       ? `\n[产品] 按下面的文字描述把产品画进画面（本图不提供产品参考图）：${options.productVisual === '' ? '一个干净的产品瓶' : clean(options.productVisual)}。\n产品在本镜的呈现：${placement}。产品外形、主色与材质必须与描述一致，不要出现品牌 Logo 或文字。`
@@ -340,7 +351,7 @@ export function framePrompt(options: {
 
   return `为镜头 SH${String(options.segment.index).padStart(2, '0')} 生成一张适合「图生视频」的首帧。
 [构图] 景别：${shotType}${camera === '' ? '' : `；运镜意图：${camera}（首帧是动作开始前的定格，镜头参数只影响构图）`}。画面内容：${options.segment.visualPrompt}
-[起始姿态] 只表现动作开始前的清晰状态：主体姿态、手部、产品与空间关系完整，产品落点符合支撑与重力；不要把后续动作提前画出来，不要出现运动残影。${material}
+[起始姿态] 只表现动作开始前的清晰状态：主体姿态、手部、产品与空间关系完整，产品落点符合支撑与重力；不要把后续动作提前画出来，不要出现运动残影。${subject}${material}
 [反讽落地] 如果本镜是中文双关/俗语的字面化（画饼、背锅、摸鱼、穿小鞋…），必须把那个**字面物件**画成**真实存在的实物**：画饼要画成一张真实的、刚出锅的大饼（金黄、有焦斑、冒热气，像真食物），背锅要画成真实的铁锅，不能画成饼图、图标、示意图、剪贴画或文字。形状、尺寸、位置、颜色都要具体可辨。
 ${lighting === '' ? '' : `[光线] ${lighting}；光向全片保持一致。\n`}${environment === '' ? '' : `[环境动态] ${environment}（首帧里保持静止或轻微可辨，不要抢主体）。\n`}[画面] 主体清晰、前景/中景/背景分层；画面下方留出干净区域便于后期字幕；画面内不生成任何文字。
 ${options.hasProduct ? '[合规] 如有真人风格人物，请让其为全新虚构角色（五官、发型与任何真实人物不同），避免与真实人物雷同。\n' : ''}
@@ -384,8 +395,13 @@ export function videoPrompt(options: {
    * - 其它网关大多只吃一张图，那就只传首帧，产品外观靠文字描述。
    */
   includeProductImage?: boolean
+  /** 角色锚点：写进连续性锁，避免 Seedance 每镜把角色换掉。 */
+  subjectIdentity?: string
 }): string {
   const usesProductImage = options.hasProduct && (options.includeProductImage ?? true)
+  const subjectLock = options.subjectIdentity === undefined || options.subjectIdentity.trim() === ''
+    ? ''
+    : `\n[角色锁定] 全片只有一个主角：${clean(options.subjectIdentity)}。每一镜的角色外形（物种/毛色/花纹/眼睛/体型/配饰）必须与首帧完全一致，不得换品种、换毛色、换配饰；只随剧情改变姿态、表情与场景。`
   const baseline = clean(options.lightingBaseline ?? '')
 
   const shotLines = options.shots
@@ -420,6 +436,7 @@ export function videoPrompt(options: {
   } else {
     lockLines.push('画面中不出现任何品牌 Logo、广告文字或额外人物。')
   }
+  if (subjectLock !== '') lockLines.push(subjectLock.replace(/^\n/, ''))
   if (baseline !== '') lockLines.push(`光线基准：${baseline}，全段保持同一光向与色温。`)
   lockLines.push(`空间：保持${usesProductImage ? '图片2' : '图片1'}中的空间结构与背景固定元素，主体脚下的接触关系真实。`)
 

@@ -489,6 +489,13 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
         await engine.start(runId, { from: 'publish', autoAdvance: false })
         break
       }
+      case 'reset-anchor': {
+        // 角色锚点重生成：清掉锚点与所有参考图，下一步重跑「参考图匹配」会重新生成。
+        run.subject = undefined
+        run.frames = []
+        await store.flush(runId)
+        break
+      }
       case 'set-rewrite-mode': {
         // 复刻方式：run 级覆盖（老项目默认 faithful，避免把节令/题材换掉）。
         run.rewriteMode = asString(body.mode) === 'redesign' ? 'redesign' : 'faithful'
