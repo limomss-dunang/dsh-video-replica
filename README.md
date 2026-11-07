@@ -10,7 +10,7 @@ DeepSeek Harness（DSH）插件。粘贴抖音 / 小红书 / 视频号等分享�
 
 [安装](#安装) · [快速开始](#快速开始) · [模型配置](#模型配置) · [排障](#排障) · [贡献指南](CONTRIBUTING.md)
 
-流程参考 [LeadStageAI](https://www.hzdun.com/) 的六步管线；界面形态参考 dsh-imagegen
+流程参考同类产品的六步管线并补上「一键发布」；界面形态参考 dsh-imagegen
 的「侧边栏入口 + 中栏三栏工作台 + 设置页」。
 
 ![工作台](docs/assets/workbench.jpg)
@@ -18,39 +18,76 @@ DeepSeek Harness（DSH）插件。粘贴抖音 / 小红书 / 视频号等分享�
 ![新建复刻](docs/assets/create.jpg)
 
 ```
-┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
-│ ① 解析下载 │ → │ ② AI 拆解 │ → │ ③ AI 仿写 │ → │ ④ 参考图   │ → │ ⑤ 生成视频 │ → │ ⑥ 合成成片 │
-│ 链接/上传  │   │ 抽帧+视觉 │   │ A/B/C 三版│   │ 产品融入分镜│   │ 分镜成片   │   │ 拼接+字幕  │
-└──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘
+①解析下载 → ②AI拆解 → ③AI仿写 → ④参考图匹配 → ⑤生成视频 → ⑥合成成片 → ⑦一键发布
+  链接/上传   抽帧+视觉   A/B/C三版   角色锚点+产品     分镜成片    拼接+字幕    视频号/抖音
 ```
 
 ## 安装
 
-### 前置条件
+> **给 AI / 命令行的最短路径**：clone → `npm install` → `npm run build` → `node scripts/install.mjs`。
+> 脚本会把插件复制进 DSH profile，并自动挂进 `dsh.profile.bundles`；装完只需**彻底重启 DSH**。
 
-- 已安装支持 Cordis 插件和客户端工作台的 DeepSeek Harness；本插件需要在宿主内使用，仓库尚未给出最低兼容宿主版本。
-- 从源码构建时，推荐 Node.js **22.18+（22.x）或 24.11+（24.x）**，与当前构建工具的版本要求一致。
-- 安装 `ffmpeg`、`ffprobe`，并加入 PATH，或在插件设置中填写可执行文件路径。
-- 可选安装 `yt-dlp`，用于部分平台的下载；也可以使用解析服务或上传本地视频。
-- 准备支持视觉理解、文本、图片和视频生成的模型服务；语音识别与配音可选。模型调用可能产生费用。
+### 一条命令安装（推荐，AI 可直接执行）
 
-### 从源码构建并安装
+前置条件：DSH 至少启动过一次（已生成 `~/.dsh/profiles/<profile>`）、Node.js **22.18+ / 24.11+**、
+`ffmpeg` 与 `ffprobe` 在 PATH（或稍后在插件设置里填绝对路径）。
+
+macOS / Linux：
 
 ```bash
 git clone https://github.com/limomss-dunang/dsh-video-replica.git
 cd dsh-video-replica
-npm install       # prepare 会构建 lib/index.js 和 lib/client.js
-npm run typecheck
-npm pack          # 生成 dsh-video-replica-0.1.0.tgz 等安装包
+npm install          # prepare 会自动构建 lib/
+npm run build        # 再显式构建一次，确保 lib/index.js + lib/client.js 是新的
+node scripts/install.mjs
 ```
 
-在 DSH 的「设置 → 插件 → 安装插件」中选择构建后的目录或生成的 tarball。
-安装后重启 DSH；侧边栏会出现「视频复刻」，设置中会出现「视频复刻配置」。
-本地开发时可用 `npm run build` 重新构建：宿主端改动需要重启 DSH，客户端改动刷新页面即可。
+Windows（PowerShell）：
 
-### 使用 Release 安装包
+```powershell
+git clone https://github.com/limomss-dunang/dsh-video-replica.git
+cd dsh-video-replica
+npm install
+npm run build
+node scripts/install.mjs
+```
 
-如果 [Releases](https://github.com/limomss-dunang/dsh-video-replica/releases) 提供 `dsh-video-replica-*.tgz`，可直接下载并安装。GitHub 自动生成的 **Source code (zip / tar.gz)** 只含源码，不含构建后的 `lib/`，需按上面的步骤先构建。
+脚本会自动探测 `~/.dsh/profiles/desktop`，找不到再用 `web`。多 profile / 自定义 DSH_HOME：
+
+```bash
+node scripts/install.mjs --profile web
+DSH_PROFILE_ROOT=/path/to/profile node scripts/install.mjs
+```
+
+**装完的判定标准**
+
+1. 脚本输出 `✓ 复制插件包`、`✓ 已加入 … dsh.profile.bundles`；
+2. **完全退出 DSH 再重新打开**（刷新窗口不算，宿主不会重新加载插件）；
+3. 侧边栏出现「视频复刻」，设置里出现「视频复刻」配置页；
+4. 打开工作台能点「新建复刻」（没配模型会提示去设置）。
+
+**升级**：`git pull && npm install && npm run build && node scripts/install.mjs`，再重启 DSH。
+
+**卸载**：删除 `<profile>/node_modules/dsh-video-replica`，并从该 profile 的 `package.json`
+里删掉 `dsh.profile.bundles` 中的 `dsh-video-replica`。
+
+### 图形界面安装（备用）
+
+```bash
+npm install && npm pack     # 生成 dsh-video-replica-<版本>.tgz
+```
+
+在「设置 → 插件 → 安装插件」选择这个 tarball（或 Releases 页里的 tgz）。
+GitHub 自动生成的 **Source code (zip / tar.gz)** 不含构建产物 `lib/`，不能直接装。
+
+### 前置条件（详细）
+
+- 已安装支持 Cordis 插件与客户端工作台的 DeepSeek Harness；本插件需要在宿主内运行。
+- 从源码构建时用 Node.js **22.18+（22.x）或 24.11+（24.x）**，与构建工具要求一致。
+- 安装 `ffmpeg`、`ffprobe` 并加入 PATH，或在插件设置里填写可执行文件路径。
+- 可选安装 `yt-dlp`，用于部分平台下载；也可以走解析服务或直接上传本地视频。
+- 准备支持视觉理解、文本、图片、视频生成的模型服务；语音识别（ASR）与配音（TTS）可选。
+  模型调用可能产生费用。
 
 ## 快速开始
 
@@ -58,13 +95,13 @@ npm pack          # 生成 dsh-video-replica-0.1.0.tgz 等安装包
    点「测试」确认连通（`ffmpeg` / `ffprobe` / `yt-dlp` 的状态会显示在「环境状态」里）。
 2. 侧边栏点「视频复刻」→「新建复刻」。
 3. 粘贴分享链接，或选择本地视频；可选：填产品/卖点简述、上传产品图。
-4. 首次使用建议逐步执行：在「② AI 拆解」核对内容，在「③ AI 仿写」选择 A/B/C 版本并修改脚本，再执行素材生成。确认接口与脚本合适后，可用「创建并开始」连续执行六步。
+4. 首次使用建议逐步执行：在「② AI 拆解」核对内容，在「③ AI 仿写」选择 A/B/C 版本并修改脚本，再执行素材生成。确认接口与脚本合适后，可用「创建并开始」连续执行前六步（发布是手动步骤，不会自动发出去）。
 5. 在「④ 参考图匹配」检查每张分镜关键帧（可单张重新生成），
    在「⑤ AI 生成视频」检查每段成片（可单段重试），最后在「⑥ 合成成片」下载 `final.mp4`。
 
 模型生成与重试会消耗上游额度。自动流程会继续执行后续步骤；需要先审稿时使用逐步执行。点「停止」中止本地调度和等待，上游已接收的任务是否停止或退费取决于服务商。
 
-## 六步各自做什么
+## 七步各自做什么
 
 | 步骤 | 输入 | 做什么 | 产出 |
 |---|---|---|---|
@@ -120,22 +157,37 @@ npm pack          # 生成 dsh-video-replica-0.1.0.tgz 等安装包
 解析模式 `auto` 会按「直链 → 解析接口 → yt-dlp」依次尝试，全部失败时错误信息里会列出
 每一种方式的具体原因，并提示改用本地上传。
 
-## 第七步：一键发布（视频号）
+## 第七步：一键发布（视频号 / 抖音）
 
-成片完成后，在「⑦ 一键发布」选平台（当前只有**视频号**）、填短标题和描述，点「发布到视频号」：
+成片完成后进入「⑦ 一键发布」，切到目标平台、填短标题与描述，点「发布到视频号 / 发布到抖音」。
+两个平台**互相独立**：发布结果分开记录（`run.publishes[平台]`），发完一个可以切到另一个继续发。
 
-1. 宿主用 `playwright-core` 打开本机浏览器（优先 playwright 自带 chromium，其次系统 Edge / Chrome）进视频号创作页；
-2. 没登录时页面停在扫码登录——在**弹出的浏览器窗口里用微信扫码**，登录后自动继续；
-3. 自动把 `final.mp4` 塞进上传框、等上传完成、填描述（默认取拆解摘要）、点「发表」；
-4. 成功后回填作品链接与发布截图，日志里能看到每一步。
+### 视频号
 
-要点：
+1. 宿主用 `playwright-core` 打开本机浏览器进视频号创作页（`channels.weixin.qq.com/platform/post/create`）；
+2. 未登录时停在扫码页——在**弹出的浏览器窗口里用微信扫码**，登录后自动继续；
+3. 编辑器在独立 iframe 里：脚本按 iframe 查找上传入口（CDP `DOM.setFileInputFiles`）、等视频上传完成、填描述、真实鼠标点击「发表」；
+4. 成功后回填作品链接与截图。
 
-- **需要本机有 Chromium 系浏览器**：优先用 playwright 自带的 chromium，其次 Microsoft Edge、Google Chrome；都没有时可用 `DSH_VIDEO_REPLICA_BROWSER` 指向浏览器可执行文件；
-- **登录态存在独立 profile**：默认 `~/.dsh/browser-profiles/video-replica-publish`（可用 `DSH_VIDEO_REPLICA_PUBLISH_PROFILE` 改），扫码一次后复用；
+### 抖音
+
+1. 打开抖音创作者中心上传页（`creator.douyin.com/creator-micro/content/upload`）；
+2. 未登录时用**抖音 App 扫码**；
+3. 选文件上传 → 等预览视频就绪（`readyState >= 3` 且时长 > 0）→ 填作品标题与描述（富文本）→ 滚到底真实点击「发布」；
+4. 成功后跳转内容管理页并回填状态。
+
+> **短信验证**：抖音在同一账号短时间内多次发布时会触发风控，弹出「接收短信验证码」。
+> 这一步平台要求本人操作，插件会进入 **「等待短信验证…」** 状态（最多 5 分钟），
+> 你在浏览器窗口里点「获取验证码」、填入验证码即可继续。正常一次发布一般不会触发。
+
+### 共同要点
+
+- **需要本机有 Chromium 系浏览器**：优先 playwright 自带 chromium，其次 Microsoft Edge / Google Chrome；
+  都没有时用 `DSH_VIDEO_REPLICA_BROWSER` 指向可执行文件；
+- **登录态存在独立 profile**：默认 `~/.dsh/browser-profiles/video-replica-publish`
+  （可用 `DSH_VIDEO_REPLICA_PUBLISH_PROFILE` 改），两个平台共用，扫码一次长期复用；
 - 发布是**手动步骤**：即使开着「自动连续执行」也不会自动发出去，必须你点一下；
-- 登录态由浏览器插件保存，通常能复用一段时间；失效后重新点发布、再扫一次即可；
-- 视频号页面结构变化时按「无障碍快照」找元素，找不到会给出明确报错并把页面留在浏览器里，可手动接管。
+- 失败时浏览器窗口会保留并写 `publish/<平台>-fail-*.png` 截图，可手动接管。
 
 ## 数据与隐私
 
@@ -208,6 +260,9 @@ python scripts/preview/shots.py             # 界面截图 -> output/preview/
 | TTS 报「Unknown voice」 | 网关对音色名要求严格；插件会解析报错里的可用音色列表并自动挑一个（优先 `mimo_default`）重试，同时在日志里写明改用了哪个音色。想固定音色就把设置里的「音色」填成网关支持的名称。 |
 | 重启后任务标为「上次执行被中断」 | 宿主重启会把未完成步骤标记为失败；当前不会按上游任务号自动续接。先核对服务商任务状态，再决定是否重新运行，避免重复提交。 |
 | 中文字幕显示为方块 | 在运行 DSH 的机器上安装中文字体；系统缺少 `Microsoft YaHei` 时 libass 会选择替代字体。 |
+| 侧边栏没有出现「视频复刻」 | 99% 是没真正重启 DSH（刷新窗口不算）。确认 `node scripts/install.mjs` 打印的 profile 目录是你在用的那个，并彻底退出再打开。 |
+| 发布到抖音时弹「短信验证码」 | 平台风控（同一账号短时间内多次发布会触发）。插件会停在「等待短信验证…」状态，在打开的浏览器窗口里完成验证即可；正常一次发布一般不会弹。 |
+| 视频号发布报「页面上没找到视频上传入口」 | 视频号编辑器在独立 iframe 里，旧版本号只查主页面。升级到 0.2.x 后按无障碍/iframe 方式查找；仍失败时看运行目录 `publish/post-fail-*.png` 截图。 |
 
 ## 已知限制
 
