@@ -628,6 +628,16 @@ export async function stepRewrite(ctx: PipelineContext): Promise<void> {
     }
   }
   if (parsed === undefined) parsed = parseModelJson(raw, 'AI 仿写')
+  const checksRaw = asRecord(parsed.checks)
+  const checks = {
+    keptCoreIdea: asString(checksRaw.keptCoreIdea, '').trim(),
+    keptOccasion: asString(checksRaw.keptOccasion, '').trim(),
+    keptSubject: asString(checksRaw.keptSubject, '').trim(),
+    changed: asString(checksRaw.changed, '').trim(),
+  }
+  if (checks.keptOccasion !== '' || checks.keptSubject !== '') {
+    ctx.log('rewrite', 'info', `仿写自检：主体=${checks.keptSubject === '' ? '—' : checks.keptSubject}；节令=${checks.keptOccasion === '' ? '—' : checks.keptOccasion}`)
+  }
   const { variants, recommendedId } = normalizeVariants(
     parsed,
     targetDuration,
@@ -636,6 +646,7 @@ export async function stepRewrite(ctx: PipelineContext): Promise<void> {
   run.scripts = {
     variants,
     recommendedId,
+    checks,
     productBrief: run.productBrief ?? '',
     model: config.rewrite.model,
     createdAt: Date.now(),
@@ -1114,15 +1125,17 @@ function voiceCasting(segments: ScriptSegment[], config: PluginConfig): Map<stri
  * MiMo 一类模型吃自然语言描述（“气急败坏、语速偏快、有真实呼吸”），
  * 不要播音腔 —— 这条片子的笑点一半在“人真的被气到了”。
  */
-function ttsStyleFor(emotions: string[], creativeDevice: string): string {
+function ttsStyleFor(emotions: string[], creativeDevice: string, summary: string): string {
   const unique = [...new Set(emotions.map(item => item.trim()).filter(item => item !== ''))]
   const mood = unique.length === 0 ? '' : unique.join('、')
-  const literal = /字面|双关|多义/.test(creativeDevice)
-  const parts: string[] = []
-  parts.push('短视频博主现场吐槽的语气，口语化，不要播音腔，不要念稿感')
-  if (mood !== '') parts.push(`情绪按顺序升级：${mood}`)
-  parts.push('语速偏快，有明显呼吸和情绪起伏，到崩溃处可以破音、咬牙、叹气')
-  if (literal) parts.push('语气要像真的被 AI 气到，又拿它没办法')
+  const corpus = `${creativeDevice} ${summary}`
+  const contrast = /反差|错位|萌|可爱/.test(corpus)
+  const literal = /字面|双关|多义/.test(corpus)
+  const parts: string[] = ['口语化，不要播音腔，不要念稿感']
+  if (mood !== '') parts.push(`情绪按顺序走：${mood}`)
+  if (contrast) parts.push('声音要有反差：前半段与外形一致的软萌/乖巧，后段突然变凶或变急，反差要明显')
+  parts.push('有真实的呼吸和情绪起伏，允许破音、咬牙、叹气，不要平铺直叙')
+  if (literal) parts.push('语气像被按字面照做的人整到，又拿它没办法')
   return parts.join('；')
 }
 
@@ -1210,6 +1223,7 @@ export async function stepCompose(ctx: PipelineContext): Promise<void> {
           const style = ttsStyleFor(
             (chunk?.shots ?? []).map(shot => shot.emotion ?? '').filter(item => item !== ''),
             run.analysis?.creativeDevice ?? '',
+              run.analysis?.summary ?? '',
           )
           const speech = await synthesizeSpeech({
             config: {

@@ -1134,6 +1134,12 @@ function StageRewrite(props: StageRewriteProps): JSX.Element {
                 <div className="vr-kv"><span>标题</span><span>{variant.title}</span></div>
                 <div className="vr-kv"><span>钩子</span><span>{variant.hookLine}</span></div>
                 <div className="vr-kv"><span>时长</span><span>{variant.totalDurationSec}s · {segments.length} 个分镜</span></div>
+                {run.scripts.checks !== undefined && (
+                  <div className="vr-inline" style={{ marginTop: 6 }}>
+                    <Pill>{`主体：${run.scripts.checks.keptSubject === undefined || run.scripts.checks.keptSubject === '' ? '—' : run.scripts.checks.keptSubject}`}</Pill>
+                    <Pill tone={run.analysis?.occasion === undefined ? undefined : 'ok'}>{`节令：${run.scripts.checks.keptOccasion === undefined || run.scripts.checks.keptOccasion === '' ? '无' : run.scripts.checks.keptOccasion}`}</Pill>
+                  </div>
+                )}
                 {variant.notes !== '' && <p className="vr-hint">{variant.notes}</p>}
                 <div className="vr-inline">
                   <button

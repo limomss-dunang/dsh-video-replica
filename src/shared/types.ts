@@ -227,9 +227,18 @@ export interface ScriptVariant {
   notes?: string
 }
 
+/** 仿写自检：模型必须回报保留了哪些东西（防止把节令/主体/核心关系换掉）。 */
+export interface RewriteChecks {
+  keptCoreIdea?: string
+  keptOccasion?: string
+  keptSubject?: string
+  changed?: string
+}
+
 export interface ScriptSet {
   variants: ScriptVariant[]
   recommendedId: string
+  checks?: RewriteChecks
   /** 由用户填写的产品/卖点简述，仿写时作为约束。 */
   productBrief: string
   model?: string
