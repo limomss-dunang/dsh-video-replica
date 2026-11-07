@@ -17,7 +17,7 @@ import type {
   StepId,
   StepState,
 } from '../shared/types.ts'
-import { ASPECT_RATIOS, CAMERA_MOVES, PLATFORM_LABELS, SHOT_TYPES, STEP_IDS, STEP_LABELS } from '../shared/types.ts'
+import { ASPECT_RATIOS, CAMERA_MOVES, MANUAL_STEP_IDS, PLATFORM_LABELS, SHOT_TYPES, STEP_IDS, STEP_LABELS } from '../shared/types.ts'
 import type { VideoReplicaApi } from './api.ts'
 import { mediaUrl } from './api.ts'
 
@@ -348,6 +348,10 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
 
   const stepState = run === undefined ? undefined : stepOf(run, selected)
   const canRun = run !== undefined && !busy
+  // 「执行下一步」：第一个还没做（pending/failed）的内容步骤；发布是手动步骤，不自动带出去。
+  const nextStep = run === undefined
+    ? undefined
+    : run.steps.find(step => !MANUAL_STEP_IDS.includes(step.id) && (step.status === 'pending' || step.status === 'failed'))
 
   return (
     <div className="vr-app">
@@ -371,6 +375,20 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
             {busy ? <span className="vr-spin" /> : null}
             <span>{run.title}</span>
           </div>
+        )}
+        {run !== undefined && nextStep !== undefined && (
+          <button
+            type="button"
+            className="vr-btn"
+            disabled={busy}
+            title={`${tt('runNext')}：${STEP_LABELS[nextStep.id]}`}
+            onClick={() => {
+              if (nextStep === undefined) return
+              void act(() => api.runStep(run.id, nextStep.id))
+            }}
+          >
+            {`${tt('runNext')}（${STEP_LABELS[nextStep.id]}）`}
+          </button>
         )}
         {run !== undefined && (
           <button

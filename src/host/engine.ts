@@ -6,15 +6,15 @@
  */
 
 import type { PluginConfig, RunState, StepId, StepState } from '../shared/types.ts'
-import { STEP_IDS } from '../shared/types.ts'
+import { MANUAL_STEP_IDS, STEP_IDS } from '../shared/types.ts'
 import type { ConfigStore } from './config.ts'
 import { STEP_RUNNERS, type PipelineContext } from './pipeline.ts'
 import type { RunStore } from './store.ts'
 import type { DshModels } from './dsh.ts'
 import { messageOf } from './util.ts'
 
-/** 只能手动点、不参与自动连续执行的步骤（发布对外有副作用）。 */
-const MANUAL_STEPS: readonly StepId[] = ['publish']
+/** 手动步骤（发布）：自动执行时停在它前面，只有用户点才跑。 */
+const MANUAL_STEPS = MANUAL_STEP_IDS
 
 interface ActiveJob {
   controller: AbortController

@@ -43,6 +43,9 @@ export const CAMERA_MOVES = ['固定', '缓慢推近', '缓慢拉远', '横摇',
 
 export const STEP_IDS: StepId[] = ['parse', 'analyze', 'rewrite', 'match', 'generate', 'compose', 'publish']
 
+/** 只能手动点、不参与自动连续执行的步骤（发布对外有副作用）。 */
+export const MANUAL_STEP_IDS: StepId[] = ['publish']
+
 export const STEP_LABELS: Record<StepId, string> = {
   parse: '解析下载',
   analyze: 'AI 拆解',
