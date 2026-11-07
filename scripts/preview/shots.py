@@ -32,7 +32,15 @@ def main() -> int:
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=2)
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(f"pageerror: {error}"))
-        page.on("console", lambda message: errors.append(f"console.{message.type}: {message.text}") if message.type == "error" else None)
+        # 预览页用 data URL / 缺失的示例素材，浏览器会报 ERR_FILE_NOT_FOUND；那是预期内的，不算错误。
+        def on_console(message):
+            if message.type != "error":
+                return
+            if "ERR_FILE_NOT_FOUND" in (message.text or ""):
+                return
+            errors.append(f"console.{message.type}: {message.text}")
+
+        page.on("console", on_console)
         for name, step, theme, width, height, busy, full in SHOTS:
             page.set_viewport_size({"width": width, "height": height})
             suffix = f"&busy=1" if busy else ""
