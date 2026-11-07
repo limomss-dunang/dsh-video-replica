@@ -25,7 +25,6 @@ import type { DshModels } from './dsh.ts'
 import { completeText, describeEndpoint, resolveEndpoint, usesDsh } from './endpoint-resolver.ts'
 import type { EndpointConfig } from '../shared/types.ts'
 import { regenerateFrame, regenerateSegment, type PipelineContext } from './pipeline.ts'
-import type { BrowserRuntimeLike } from './publish.ts'
 import { CAMERA_MOVES, SHOT_TYPES } from './prompts.ts'
 import { buildPromptPreview } from './pipeline.ts'
 import { asString, isLoopbackRequest, messageOf } from './util.ts'
@@ -50,8 +49,6 @@ export interface RoutesDeps {
   engine: Engine
   /** DSH 已配置模型目录（可缺省）。 */
   dsh?: DshModels
-  /** 浏览器服务（dsh-browser-playwright-codex 提供，可缺省）。 */
-  browser?: () => BrowserRuntimeLike | undefined
   dataRoot: () => string
   /** 配置保存后重算数据目录（dataDir 可能变了）。 */
   refreshDataRoot?: () => Promise<void>
@@ -188,7 +185,7 @@ function markStale(run: RunState, steps: StepId[]): void {
 }
 
 export function makeRoutes(deps: RoutesDeps): WebRoute[] {
-  const { configs, store, engine, dsh, browser } = deps
+  const { configs, store, engine, dsh } = deps
   const table = new Map<string, RouteEntry>()
 
   const entryFor = (path: string): RouteEntry => {
@@ -432,9 +429,6 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
         // 第七步：带发布参数启动（手动步骤，不走自动推进）。
         const platform = asString(body.platform, 'channels')
         if (platform !== 'channels') throw new Error('暂只支持发布到视频号')
-        if (browser === undefined || browser() === undefined) {
-          throw new Error('第七步需要「dsh-browser-playwright-codex」插件：没有检测到浏览器服务。安装并启用后重启 DSH 再试。')
-        }
         const title = asString(body.title).trim()
         const description = asString(body.description).trim()
         run.publish = {
@@ -572,7 +566,6 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
           run,
           signal: controller.signal,
           ...(dsh === undefined ? {} : { dsh }),
-          ...(browser === undefined ? {} : { browser: browser() }),
           setStep: (id, patch) => {
             const state = run.steps.find(item => item.id === id)
             if (state !== undefined) Object.assign(state, patch)

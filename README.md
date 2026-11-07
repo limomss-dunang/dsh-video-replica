@@ -124,14 +124,15 @@ npm pack          # 生成 dsh-video-replica-0.1.0.tgz 等安装包
 
 成片完成后，在「⑦ 一键发布」选平台（当前只有**视频号**）、填短标题和描述，点「发布到视频号」：
 
-1. 宿主通过 `dsh-browser-playwright-codex` 的 `ctx.browser` 服务打开视频号创作页；
+1. 宿主用 `playwright-core` 打开本机浏览器（优先 playwright 自带 chromium，其次系统 Edge / Chrome）进视频号创作页；
 2. 没登录时页面停在扫码登录——在**弹出的浏览器窗口里用微信扫码**，登录后自动继续；
 3. 自动把 `final.mp4` 塞进上传框、等上传完成、填描述（默认取拆解摘要）、点「发表」；
 4. 成功后回填作品链接与发布截图，日志里能看到每一步。
 
 要点：
 
-- **必须先装并启用 `dsh-browser-playwright-codex`**：第七步用的是它的浏览器服务（`ctx.browser`），没有它时按钮会直接提示；
+- **需要本机有 Chromium 系浏览器**：优先用 playwright 自带的 chromium，其次 Microsoft Edge、Google Chrome；都没有时可用 `DSH_VIDEO_REPLICA_BROWSER` 指向浏览器可执行文件；
+- **登录态存在独立 profile**：默认 `~/.dsh/browser-profiles/video-replica-publish`（可用 `DSH_VIDEO_REPLICA_PUBLISH_PROFILE` 改），扫码一次后复用；
 - 发布是**手动步骤**：即使开着「自动连续执行」也不会自动发出去，必须你点一下；
 - 登录态由浏览器插件保存，通常能复用一段时间；失效后重新点发布、再扫一次即可；
 - 视频号页面结构变化时按「无障碍快照」找元素，找不到会给出明确报错并把页面留在浏览器里，可手动接管。

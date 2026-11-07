@@ -31,7 +31,7 @@ import type {
   TranscriptCue,
 } from '../shared/types.ts'
 import { PLATFORM_LABELS, aspectSizeOf } from '../shared/types.ts'
-import { publishToChannels, savePublishShot, type BrowserRuntimeLike } from './publish.ts'
+import { publishToChannels } from './publish.ts'
 import { loadImage, type ChatImage } from './providers/chat.ts'
 import { completeText, resolveEndpoint, usesDsh } from './endpoint-resolver.ts'
 import type { DshModels } from './dsh.ts'
@@ -76,8 +76,6 @@ export interface PipelineContext {
   store: RunStore
   run: RunState
   signal: AbortSignal
-  /** 浏览器服务（dsh-browser-playwright-codex 提供；缺失时第七步报错提示）。 */
-  browser?: BrowserRuntimeLike
   /** 更新某一步的状态（内部负责合并与落盘）。 */
   setStep: (step: StepId, patch: Partial<RunState['steps'][number]>) => void
   log: (step: StepId | 'run', level: 'info' | 'warn' | 'error', text: string) => void
@@ -1522,10 +1520,6 @@ async function stepPublish(ctx: PipelineContext): Promise<void> {
   const { run } = ctx
   const compose = run.compose
   if (compose === undefined) throw new Error('还没有成片：请先执行「合成成片」再发布')
-  const browser = ctx.browser
-  if (browser === undefined) {
-    throw new Error('第七步需要「dsh-browser-playwright-codex」插件：没有检测到浏览器服务（ctx.browser）。安装并启用它之后重试。')
-  }
   const platform = run.publish?.platform ?? 'channels'
   const description = (run.publish?.description ?? '').trim() || defaultPublishText(run)
   const title = (run.publish?.title ?? '').trim()
@@ -1544,12 +1538,11 @@ async function stepPublish(ctx: PipelineContext): Promise<void> {
 
   try {
     const result = await publishToChannels({
-      browser,
-      owner: `dsh-video-replica:${run.id}`,
       videoFile,
       description,
       ...(title === '' ? {} : { title }),
       signal: ctx.signal,
+      runDir: dirOf(ctx),
       log: (level, text) => ctx.log('publish', level, text),
       onProgress: progress => {
         if (run.publish !== undefined) {
@@ -1561,10 +1554,7 @@ async function stepPublish(ctx: PipelineContext): Promise<void> {
         touch(ctx)
       },
     })
-    let screenshot: string | undefined
-    if (result.screenshot !== undefined) {
-      screenshot = await savePublishShot(dirOf(ctx), result.screenshot).catch(() => undefined)
-    }
+    const screenshot = result.screenshot
     run.publish = {
       platform,
       status: 'done',

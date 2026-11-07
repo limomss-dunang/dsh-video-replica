@@ -30,8 +30,6 @@ export class Engine {
     private readonly store: RunStore,
     /** DSH 已配置模型接入层（可选，缺失时只能用手填接口）。 */
     private readonly dsh?: DshModels,
-    /** 取宿主服务（浏览器服务等）；由插件入口传入 ctx.get。 */
-    private readonly getService?: (name: string) => unknown,
   ) {}
 
   /**
@@ -82,14 +80,12 @@ export class Engine {
 
   /** 建一个可取消的 pipeline 上下文。 */
   private makeContext(run: RunState, config: PluginConfig, controller: AbortController): PipelineContext {
-    const browser = this.getService?.('browser') as PipelineContext['browser']
     return {
       config,
       store: this.store,
       run,
       signal: controller.signal,
       ...(this.dsh === undefined ? {} : { dsh: this.dsh }),
-      ...(browser === undefined ? {} : { browser }),
       setStep: (step: StepId, patch: Partial<StepState>) => {
         const target = run.steps.find(item => item.id === step)
         if (target === undefined) return
