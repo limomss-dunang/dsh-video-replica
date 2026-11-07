@@ -489,6 +489,12 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
         await engine.start(runId, { from: 'publish', autoAdvance: false })
         break
       }
+      case 'set-rewrite-mode': {
+        // 复刻方式：run 级覆盖（老项目默认 faithful，避免把节令/题材换掉）。
+        run.rewriteMode = asString(body.mode) === 'redesign' ? 'redesign' : 'faithful'
+        await store.flush(runId)
+        break
+      }
       case 'skip-step': {
         if (!STEP_IDS.includes(step)) throw new Error('未知步骤')
         await engine.skipStep(runId, step)

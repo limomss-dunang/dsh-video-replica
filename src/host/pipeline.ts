@@ -217,6 +217,43 @@ function normalizeShot(raw: unknown, index: number, durationSec: number): Analys
   }
 }
 
+/** 节令关键词兜底：模型没给 occasion 时，从拆解文本里识别节令/时效。 */
+const OCCASION_KEYWORDS: Array<{ pattern: RegExp, name: string }> = [
+  { pattern: /万圣节|halloween/i, name: '万圣节' },
+  { pattern: /春节|过年|农历新年/, name: '春节' },
+  { pattern: /中秋/, name: '中秋节' },
+  { pattern: /元宵/, name: '元宵节' },
+  { pattern: /元旦|跨年/, name: '元旦跨年' },
+  { pattern: /圣诞(节)?|christmas/i, name: '圣诞节' },
+  { pattern: /情人节|七夕/, name: '情人节' },
+  { pattern: /端午/, name: '端午节' },
+  { pattern: /国庆/, name: '国庆' },
+  { pattern: /开学季|开学|返校/, name: '开学季' },
+  { pattern: /毕业季|毕业/, name: '毕业季' },
+  { pattern: /双\s*11|双十一/, name: '双11' },
+  { pattern: /618/, name: '618' },
+  { pattern: /世界杯/, name: '世界杯' },
+  { pattern: /奥运/, name: '奥运会' },
+]
+
+/** 从拆解文本推断节令；识别不到返回 undefined。 */
+function inferOccasion(analysis: AnalysisReport): { name: string, why: string } | undefined {
+  if (analysis.occasion !== undefined && analysis.occasion.name.trim() !== '') return analysis.occasion
+  const corpus = [
+    analysis.coreIdea,
+    analysis.summary,
+    analysis.whyItWorks,
+    analysis.creativeDevice,
+    analysis.hook.type,
+    analysis.hook.text,
+    ...(analysis.transcript ?? []).map(cue => cue.text),
+    ...analysis.shots.map(shot => `${shot.visual} ${shot.onscreenText} ${shot.voiceover}`),
+  ].join(' ')
+  const hit = OCCASION_KEYWORDS.find(item => item.pattern.test(corpus))
+  if (hit === undefined) return undefined
+  return { name: hit.name, why: '从拆解的创意核心/台词里识别到节令或时效线索' }
+}
+
 function normalizeAnalysis(raw: Record<string, unknown>, options: {
   durationSec: number
   width: number
@@ -237,6 +274,9 @@ function normalizeAnalysis(raw: Record<string, unknown>, options: {
   const scores = asRecord(raw.scores)
   const score = (key: string): number => clamp(Math.round(asNumber(scores[key], 6)), 0, 10)
   const dna = asArray(raw.dna).map(item => asString(item)).filter(item => item !== '')
+  const occasionRaw = asRecord(raw.occasion)
+  const occasionName = asString(occasionRaw.name ?? raw.occasion, '').trim()
+  const occasionWhy = asString(occasionRaw.why ?? occasionRaw.reason, '').trim()
   const palette = asArray(style.palette).map(item => asString(item)).filter(item => item !== '')
 
   return {
@@ -252,6 +292,7 @@ function normalizeAnalysis(raw: Record<string, unknown>, options: {
       pacing: asString(rhythm.beatPattern, ''),
     },
     summary: asString(raw.summary, ''),
+    ...(occasionName === '' ? {} : { occasion: { name: occasionName, why: occasionWhy } }),
     hook: {
       type: asString(hook.type, ''),
       text: asString(hook.text, ''),
@@ -522,6 +563,16 @@ export async function stepRewrite(ctx: PipelineContext): Promise<void> {
   ctx.setStep('rewrite', { status: 'running', progress: 0.1, message: '准备仿写', startedAt: Date.now(), error: undefined })
   touch(ctx)
 
+  // 节令兜底：老拆解可能没有 occasion 字段，从文本里识别一次并写回，避免仿写把节日弄丢。
+  if (run.analysis.occasion === undefined) {
+    const inferred = inferOccasion(run.analysis)
+    if (inferred !== undefined) {
+      run.analysis.occasion = inferred
+      ctx.log('rewrite', 'info', `识别到节令/时效钩子：${inferred.name}（仿写会保留它）`)
+      touch(ctx)
+    }
+  }
+
   if (run.productVisual === undefined && run.productImages.length > 0) {
     ctx.setStep('rewrite', { progress: 0.2, message: '识别产品外观' })
     touch(ctx)
@@ -545,7 +596,7 @@ export async function stepRewrite(ctx: PipelineContext): Promise<void> {
     hasProductImages: run.productImages.length > 0,
     productNames: run.productImages.map(image => image.name),
     targetDurationSec: targetDuration,
-    mode: config.rewriteMode,
+    mode: run.rewriteMode ?? config.rewriteMode,
   })
   // 长时间源片容易让模型写飞（实测出现 30 万字符的重复输出），
   // 这里做一次「紧凑重试」：只要输出异常长、解析失败或版本不足 2 版，就用压缩指令再要一次。

@@ -503,7 +503,8 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                         step={stepState as StepState}
                         onSelect={variantId => void act(() => api.selectVariant(run.id, variantId))}
                         onSave={segments => void act(() => api.updateSegments(run.id, segments))}
-                        onRun={() => void act(() => api.runStep(run.id, 'rewrite'))}
+                        onMode={mode => void act(() => api.setRewriteMode(run.id, mode))}
+                  onRun={() => void act(() => api.runStep(run.id, 'rewrite'))}
                       />
                     )}
                     {selected === 'match' && (
@@ -985,7 +986,13 @@ function StageAnalysis(props: { run: RunState, step: StepState, onRun: () => voi
                   <Pill tone="brand">{analysis.meta.style}</Pill>
                   <Pill>{analysis.shots.length} 镜</Pill>
                   <Pill>{analysis.meta.pacing === '' ? '—' : analysis.meta.pacing}</Pill>
+                  {analysis.occasion !== undefined && (
+                    <Pill tone="ok">节令：{analysis.occasion.name}</Pill>
+                  )}
                 </div>
+                {analysis.occasion !== undefined && (
+                  <p className="vr-hint">时效钩子：{analysis.occasion.why}</p>
+                )}
               </Card>
 
               <Card title={tt('hook')}>
@@ -1060,6 +1067,7 @@ function StageAnalysis(props: { run: RunState, step: StepState, onRun: () => voi
 }
 
 interface StageRewriteProps {
+  onMode: (mode: 'faithful' | 'redesign') => void
   run: RunState
   api: VideoReplicaApi
   variant: ScriptVariant | undefined
@@ -1091,6 +1099,19 @@ function StageRewrite(props: StageRewriteProps): JSX.Element {
   return (
     <>
       <StageHeader title={STEP_LABELS.rewrite} step={props.step} onRun={props.onRun} />
+      <div className="vr-row" style={{ gap: 8, alignItems: 'center', margin: '4px 0 8px' }}>
+        <span className="vr-hint">复刻方式：</span>
+        <select
+          className="vr-input"
+          style={{ width: 240 }}
+          value={run.rewriteMode ?? 'faithful'}
+          onChange={event => props.onMode(event.target.value === 'redesign' ? 'redesign' : 'faithful')}
+        >
+          <option value="faithful">忠于原片（保留题材与节令）</option>
+          <option value="redesign">重新设计（换桥段，保留核心机制与节令）</option>
+        </select>
+        {run.analysis?.occasion !== undefined && <span className="vr-hint">节令：{run.analysis.occasion.name}（必须保留）</span>}
+      </div>
       {run.scripts === undefined || variant === undefined
         ? <Empty text="还没有脚本，先执行「AI 仿写」。" />
         : (

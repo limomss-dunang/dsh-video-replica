@@ -147,6 +147,12 @@ export interface AnalysisReport {
   }
   /** 一句话概括这条视频靠什么爆。 */
   summary: string
+  /**
+   * 节令/时效钩子：这条片子必须在这个时间点发才成立的原因。
+   * 例：万圣节（临近节日，萌宠装扮讨糖）／春节／开学季／双11／热点事件。
+   * 没有时效依赖时为空。
+   */
+  occasion?: { name: string, why: string }
   hook: {
     type: string
     text: string
@@ -368,6 +374,8 @@ export interface RunState {
   aspectRatio?: AspectRatio
   /** 第七步：一键发布的运行状态。 */
   publish?: PublishState
+  /** 本次仿写方式覆盖（不填则用设置里的全局默认）。 */
+  rewriteMode?: RewriteMode
   steps: StepState[]
   source?: SourceMeta
   analysis?: AnalysisReport

@@ -50,7 +50,7 @@ export function defaultConfig(): PluginConfig {
     dataDir: '',
     imageFrameStyle: 'photo',
     imageProductMode: 'auto',
-    rewriteMode: 'redesign',
+    rewriteMode: 'faithful',
     parser: {
       ...endpointDefaults(),
       source: 'custom',
@@ -163,7 +163,7 @@ export function normalizeConfig(input: unknown): PluginConfig {
     imageProductMode: (['reference', 'text'].includes(asString(merged.imageProductMode))
       ? asString(merged.imageProductMode)
       : 'auto') as PluginConfig['imageProductMode'],
-    rewriteMode: (asString(merged.rewriteMode) === 'faithful' ? 'faithful' : 'redesign') as PluginConfig['rewriteMode'],
+    rewriteMode: (asString(merged.rewriteMode) === 'redesign' ? 'redesign' : 'faithful') as PluginConfig['rewriteMode'],
     parser: {
       ...endpoint(merged.parser),
       // 解析接口是服务而不是模型，恒为手填。

@@ -172,6 +172,10 @@ export class VideoReplicaApi {
     return this.action({ runId, action: 'regenerate-frame', segmentIndex, ...(prompt === undefined ? {} : { prompt }) })
   }
 
+  setRewriteMode(runId: string, mode: 'faithful' | 'redesign'): Promise<unknown> {
+    return this.action({ runId, action: 'set-rewrite-mode', mode })
+  }
+
   caption(runId: string, extra?: string): Promise<unknown> {
     return this.action({ runId, action: 'caption', ...(extra === undefined ? {} : { extra }) })
   }
