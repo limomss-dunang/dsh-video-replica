@@ -90,6 +90,11 @@ html[${ACTIVE_ATTR}] :is([data-pane="conversation"],[class*="centerCol"])>:not($
 @keyframes vr-pulse{0%,100%{box-shadow:0 0 0 0 rgba(59,110,246,.35)}50%{box-shadow:0 0 0 4px rgba(59,110,246,.08)}}
 .vr-step-text{display:flex;flex-direction:column;min-width:0;flex:1;gap:2px}
 .vr-step-label{font-size:12.5px;font-weight:600;color:inherit}
+.vr-zoomable{cursor:zoom-in}
+.vr-zoom{position:fixed;inset:0;z-index:80;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;background:rgba(4,6,10,.88);backdrop-filter:blur(4px)}
+.vr-zoom img{max-width:92vw;max-height:82vh;object-fit:contain;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.45);background:#111}
+.vr-zoom-bar{display:flex;align-items:center;gap:10px;max-width:92vw;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.08);color:#f5f6f8}
+.vr-zoom-caption{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:56vw}
 .vr-paths{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-2,rgba(127,127,127,.06))}
 .vr-path-line{display:flex;gap:8px;align-items:flex-start}
 .vr-path-label{flex:0 0 56px;font-size:11.5px;line-height:1.5;color:var(--dsw-alias-text-3,#8a8f99)}

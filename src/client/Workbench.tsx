@@ -896,6 +896,32 @@ interface StageBaseProps {
   onRun: () => void
 }
 
+/** 图片放大查看：点击遮罩或按 Esc 关闭，可新标签打开原图。 */
+function ImageZoom(props: { src: string, caption?: string, onClose: () => void }): JSX.Element {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') props.onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previous
+    }
+  }, [])
+  return (
+    <div className="vr-zoom" role="dialog" aria-modal="true" onClick={() => props.onClose()}>
+      <img src={props.src} alt={props.caption ?? ''} onClick={event => event.stopPropagation()} />
+      <div className="vr-zoom-bar" onClick={event => event.stopPropagation()}>
+        <span className="vr-zoom-caption">{props.caption ?? ''}</span>
+        <a className="vr-btn" data-size="sm" href={props.src} target="_blank" rel="noopener">新标签打开</a>
+        <button type="button" className="vr-btn" data-size="sm" onClick={() => props.onClose()}>关闭（Esc）</button>
+      </div>
+    </div>
+  )
+}
+
 function StageHeader(props: { title: string, step: StepState, onRun: () => void, busy?: boolean }): JSX.Element {
   return (
     <div className="vr-stage-head">
@@ -1006,6 +1032,7 @@ function StageParse(props: StageParseProps): JSX.Element {
 
 function StageAnalysis(props: { run: RunState, step: StepState, onRun: () => void }): JSX.Element {
   const analysis = props.run.analysis
+  const [zoom, setZoom] = useState<{ src: string, caption: string } | undefined>(undefined)
   return (
     <>
       <StageHeader title={STEP_LABELS.analyze} step={props.step} onRun={props.onRun} />
@@ -1045,7 +1072,13 @@ function StageAnalysis(props: { run: RunState, step: StepState, onRun: () => voi
                 <div className="vr-frames">
                   {analysis.frameFiles.map(file => (
                     <figure className="vr-frame" key={file} style={{ aspectRatio: '3/4' }}>
-                      <img src={mediaUrl(props.run.id, `frames/${file}`)} alt={file} loading="lazy" />
+                      <img
+                        className="vr-zoomable"
+                        src={mediaUrl(props.run.id, `frames/${file}`)}
+                        alt={file}
+                        loading="lazy"
+                        onClick={() => setZoom({ src: mediaUrl(props.run.id, `frames/${file}`), caption: `源片抽帧 · ${file.replace(/\.[^.]+$/, '')}` })}
+                      />
                       <figcaption>{file.replace(/\.[^.]+$/, '')}</figcaption>
                     </figure>
                   ))}
@@ -1096,6 +1129,7 @@ function StageAnalysis(props: { run: RunState, step: StepState, onRun: () => voi
               </Card>
             </>
           )}
+      {zoom !== undefined && <ImageZoom src={zoom.src} caption={zoom.caption} onClose={() => setZoom(undefined)} />}
     </>
   )
 }
@@ -1365,6 +1399,7 @@ function PromptPreview(props: {
 
 function StageMatch(props: StageMatchProps): JSX.Element {
   const frames = props.run.frames
+  const [zoom, setZoom] = useState<{ src: string, caption: string } | undefined>(undefined)
   return (
     <>
       <StageHeader title={STEP_LABELS.match} step={props.step} onRun={props.onRun} busy={props.busy} />
@@ -1373,10 +1408,15 @@ function StageMatch(props: StageMatchProps): JSX.Element {
         <Card title="角色锚点（保证每个分镜是同一个角色）">
           <div className="vr-row" style={{ gap: 12, alignItems: 'flex-start' }}>
             <img
+              className="vr-zoomable"
               src={mediaUrl(props.run.id, props.run.subject.anchorFile, { version: props.run.subject.createdAt })}
               alt="subject anchor"
               style={{ width: 140, borderRadius: 10 }}
               loading="lazy"
+              onClick={() => setZoom({
+                src: mediaUrl(props.run.id, props.run.subject?.anchorFile ?? '', { version: props.run.subject?.createdAt }),
+                caption: '角色锚点 · 全片角色设定图',
+              })}
             />
             <div style={{ flex: 1 }}>
               <p className="vr-hint" style={{ marginTop: 0 }}>{props.run.subject.description}</p>
@@ -1403,7 +1443,19 @@ function StageMatch(props: StageMatchProps): JSX.Element {
                   <figure className="vr-frame" data-kind="ref" key={frame.segmentIndex}>
                     {frame.file === ''
                       ? <div className="vr-frame-err">{frame.error ?? '生成失败'}</div>
-                      : <img key={frame.createdAt} src={mediaUrl(props.run.id, frame.file, { version: frame.createdAt })} alt={`ref-${frame.segmentIndex}`} loading="lazy" />}
+                      : (
+                    <img
+                      className="vr-zoomable"
+                      key={frame.createdAt}
+                      src={mediaUrl(props.run.id, frame.file, { version: frame.createdAt })}
+                      alt={`ref-${frame.segmentIndex}`}
+                      loading="lazy"
+                      onClick={() => setZoom({
+                        src: mediaUrl(props.run.id, frame.file, { version: frame.createdAt }),
+                        caption: `分镜 ${frame.segmentIndex} 参考图`,
+                      })}
+                    />
+                  )}
                     <figcaption>镜 {frame.segmentIndex} · {frame.mode === 'product' ? '产品融入' : '场景'}</figcaption>
                     <div className="vr-frame-actions">
                       <button
@@ -1434,6 +1486,7 @@ function StageMatch(props: StageMatchProps): JSX.Element {
           </div>
         </Card>
       )}
+      {zoom !== undefined && <ImageZoom src={zoom.src} caption={zoom.caption} onClose={() => setZoom(undefined)} />}
     </>
   )
 }
