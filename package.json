@@ -37,9 +37,10 @@
     "typecheck": "tsc --noEmit",
     "smoke:host": "node scripts/smoke-host.mjs",
     "smoke:client": "node scripts/smoke-client.mjs",
-    "smoke": "node scripts/smoke-client.mjs && node scripts/smoke-host.mjs",
+    "smoke": "node scripts/smoke-client.mjs && node scripts/smoke-host.mjs && node --experimental-strip-types scripts/smoke-prompts.mjs",
     "preview": "python scripts/preview/shots.py",
-    "prepare": "node scripts/build.mjs"
+    "prepare": "node scripts/build.mjs",
+    "smoke:prompts": "node --experimental-strip-types scripts/smoke-prompts.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

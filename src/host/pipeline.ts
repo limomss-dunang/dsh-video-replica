@@ -264,6 +264,51 @@ function inferOccasion(analysis: AnalysisReport): { name: string, why: string } 
   return { name: hit.name, why: '从拆解的创意核心/台词里识别到节令或时效线索' }
 }
 
+/** 老拆解没有 characters 时，看一张源片截帧让视觉模型列出需要锁定的角色。 */
+async function inferCharacters(ctx: PipelineContext): Promise<Array<{ name: string, identity: string }>> {
+  const { run, config } = ctx
+  const analysis = run.analysis
+  if (analysis === undefined) return []
+  if ((analysis.characters ?? []).length > 0) return analysis.characters ?? []
+  const frameFile = analysis.frameFiles[0]
+  if (frameFile === undefined) return []
+  try {
+    const image = await loadImage(join(dirOf(ctx), 'frames', frameFile))
+    const raw = await completeText(ctx.dsh, config.analyze, {
+      label: '角色识别',
+      system: '你是短视频分镜师。只描述画面里确实可见的内容，不臆测。只输出严格 JSON。',
+      user: [
+        '看这张视频截帧，列出画面里需要逐镜保持一致的每个主要角色（1–3 个）。',
+        '每个角色给：name（简短可区分，如「橘猫」「灰猫」「店主」）、identity（30–60 字外形身份证：物种/毛色/花纹/眼睛/体型/配饰）。',
+        '画面里只有一个人物或动物时只给一条；不要写不存在的角色；不要写动作或场景。',
+        '只输出：{"characters":[{"name":"","identity":""}]}',
+      ].join('\n'),
+      images: [image],
+      json: true,
+      maxTokens: 800,
+      temperature: 0.2,
+      ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+    })
+    const parsed = parseModelJson(raw, '角色识别')
+    const list = asArray(parsed.characters)
+      .map(item => {
+        const row = asRecord(item)
+        return { name: asString(row.name, '').trim(), identity: asString(row.identity ?? row.description, '').trim() }
+      })
+      .filter(item => item.name !== '' && item.identity !== '')
+      .slice(0, 3)
+    if (list.length > 0) {
+      analysis.characters = list
+      ctx.log('match', 'info', `识别出角色清单：${list.map(item => item.name).join('、')}`)
+      touch(ctx)
+    }
+    return list
+  } catch (error) {
+    ctx.log('match', 'warn', `角色清单识别失败（不影响流程）：${messageOf(error).slice(0, 120)}`)
+    return []
+  }
+}
+
 const LENS_PATTERNS: Array<{ pattern: RegExp, text: string }> = [
   { pattern: /鱼眼|fisheye/i, text: '鱼眼超广角镜头（门禁/猫眼视角），画面四角桶形畸变、中心放大' },
   { pattern: /门禁|门铃|可视对讲|猫眼/, text: '门禁摄像头视角，广角略带畸变，机位在门框高度' },
@@ -770,6 +815,9 @@ export async function stepMatch(ctx: PipelineContext): Promise<void> {
   // 纯复刻（没有产品图）时，先为每个角色生成一张「角色锚点」：各镜首帧都以它们为参考，
   // 否则每个分镜都会用文生图凭空造一个长得不一样的主角（多角色时尤其明显）。
   const pureReplica = run.productImages.length === 0
+  if (pureReplica && (run.analysis?.characters ?? []).length === 0) {
+    await inferCharacters(ctx)
+  }
   const characters = (run.analysis?.characters !== undefined && run.analysis.characters.length > 0
     ? run.analysis.characters
     : (run.analysis?.subjectIdentity ?? '').trim() === ''
@@ -840,6 +888,8 @@ export async function stepMatch(ctx: PipelineContext): Promise<void> {
       styleHint,
       frameStyle: config.imageFrameStyle,
       ...(lightingBaseline === '' ? {} : { lightingBaseline }),
+      ...(subjectAnchors.length === 0 ? {} : { subjectAnchors }),
+      ...(run.analysis?.meta.lens === undefined || run.analysis.meta.lens.trim() === '' ? {} : { lens: run.analysis.meta.lens }),
     })
     ctx.setStep('match', {
       progress: (index / Math.max(1, variant.segments.length)) * 0.9,
@@ -958,7 +1008,6 @@ export function buildPromptPreview(run: RunState, config: PluginConfig): {
         styleHint,
         ...(subjectIdentityForPrompt(run) === '' ? {} : { subjectIdentity: subjectIdentityForPrompt(run) }),
       ...(run.analysis?.meta.lens === undefined || run.analysis.meta.lens.trim() === '' ? {} : { lens: run.analysis.meta.lens }),
-        ...(run.analysis?.meta.lens === undefined || run.analysis.meta.lens.trim() === '' ? {} : { lens: run.analysis.meta.lens }),
         continuation: chunk.index > 1
             && chunk.shots[0]?.index === buildChunks(variant.segments)[chunk.index - 2]?.shots.at(-1)?.index,
         aspect,
