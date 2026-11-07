@@ -1,19 +1,25 @@
 /**
  * 第七步：一键发布（视频号）。
  *
- * 为什么不用 `ctx.browser`：`dsh-browser-playwright-codex` 的服务只注册在它自己的
- * 子上下文里（宿主 Service 目录里没有 `browser`），兄弟插件拿不到。这里直接复用
- * 同一套 playwright-core + 本机浏览器，登录态存在独立 profile 目录里（扫码一次即可）。
- *
- * 元素定位全部走 Playwright 的语义定位（getByRole / placeholder / 文本），不写死
- * CSS 选择器；页面改版时优先留下截图和明确报错，而不是静默失败。
+ * 视频号创作页的关键事实（2026-11 实测）：
+ * - 编辑器在**独立进程的 iframe** `channels.weixin.qq.com/micro/content/post/create` 里，
+ *   主文档只有一个 empty.html iframe；Playwright 的 locator 在这个 frame 上**查不到元素**
+ *   （evaluate 能查到，locator 返回 0），所以这里的交互全部走 frame.evaluate + CDP。
+ * - 上传入口是隐藏的 `input[type=file][accept*=video]`，用 CDP
+ *   `DOM.getDocument {pierce:true}` 找到 nodeId 后 `DOM.setFileInputFiles` 塞文件。
+ * - 上传中会出现「取消上传 / N%」；完成后预览出现「删除」按钮。
+ * - 描述是 `div.input-editor[contenteditable]`（placeholder「添加描述」），
+ *   要用 focus + execCommand('insertText') 才触发编辑器状态。
+ * - 短标题是 `input[placeholder*="短标题"]`，得用原生 value setter + input/change 事件。
+ * - 「发表」必须用**真实鼠标点击**（page.mouse.click）：JS 的 btn.click() 不会提交。
+ * - 成功信号是页面上出现「发表成功」，随后作品出现在 /platform/post/list。
  */
 
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { chromium, type BrowserContext, type Page } from 'playwright-core'
+import { chromium, type BrowserContext, type CDPSession, type Frame, type Page } from 'playwright-core'
 
 // ---------------------------------------------------------------------------
 // 浏览器启动
@@ -32,7 +38,7 @@ function describeLaunchError(error: unknown): string {
 export async function launchPublishBrowser(): Promise<{ context: BrowserContext, how: string }> {
   const dir = publishProfileDir()
   await mkdir(dir, { recursive: true }).catch(() => {})
-  const base = { headless: false, viewport: { width: 1280, height: 800 }, locale: 'zh-CN' } as const
+  const base = { headless: false, viewport: { width: 1280, height: 920 }, locale: 'zh-CN' } as const
   const attempts: Array<{ label: string, options: Record<string, unknown> }> = []
 
   const explicit = process.env.DSH_VIDEO_REPLICA_BROWSER
@@ -56,156 +62,194 @@ export async function launchPublishBrowser(): Promise<{ context: BrowserContext,
     }
   }
   throw new Error(
-    `找不到可用的浏览器（Edge / Chrome / playwright chromium 都启动失败）。`
-    + `可以安装 Microsoft Edge 或 Google Chrome，或用环境变量 DSH_VIDEO_REPLICA_BROWSER 指向浏览器可执行文件。\n`
+    '找不到可用的浏览器（Edge / Chrome / playwright chromium 都启动失败）。'
+    + '可以安装 Microsoft Edge 或 Google Chrome，或用环境变量 DSH_VIDEO_REPLICA_BROWSER 指向浏览器可执行文件。\n'
     + failures.join('\n'),
   )
 }
 
 // ---------------------------------------------------------------------------
-// 页面工具
+// 页面工具（视频号专用）
 // ---------------------------------------------------------------------------
 
 const CREATE_URL = 'https://channels.weixin.qq.com/platform/post/create'
-const LOGIN_URL = 'https://channels.weixin.qq.com/login.html'
+const EDITOR_FRAME = '/micro/content/post/create'
 
 export function isLoginUrl(url: string): boolean {
   return /\/login(\.html)?(\?|$|\/)/.test(url)
 }
 
-/** 登录页判断：URL 是登录页，或页面正文里只有登录相关文案。 */
+/** 等编辑器 iframe 出现并返回它（视频号把整个创作区放在独立 frame 里）。 */
+export async function editorFrame(page: Page, timeoutMs = 40_000): Promise<Frame | undefined> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const frame = page.frames().find(item => item.url().includes(EDITOR_FRAME))
+    if (frame !== undefined) return frame
+    if (Date.now() > deadline) return undefined
+    await page.waitForTimeout(400)
+  }
+}
+
+/** 登录判断：主页面在登录页，或编辑器 frame 迟迟不出现且正文是登录文案。 */
 export async function isLoginPage(page: Page): Promise<boolean> {
   if (isLoginUrl(page.url())) return true
   const body = await page.evaluate(() => document.body?.innerText ?? '').catch(() => '')
-  return /登录视频号助手|微信扫一扫|扫码登录/.test(body) && !/发表/.test(body)
+  return /登录视频号助手|微信扫一扫|扫码登录/.test(body) && !/视频管理/.test(body)
 }
 
-async function bodyText(page: Page): Promise<string> {
-  return await page.evaluate(() => document.body?.innerText ?? '').catch(() => '')
+async function frameText(frame: Frame): Promise<string> {
+  return await frame.evaluate(() => document.body?.innerText ?? '').catch(() => '')
 }
 
-/** 找到视频上传 input（优先 accept 含 video 的）。 */
-async function findVideoInput(page: Page) {
-  const candidates = [
-    page.locator('input[type="file"][accept*="video" i]'),
-    page.locator('input[type="file"]'),
-  ]
-  for (const locator of candidates) {
-    const count = await locator.count().catch(() => 0)
-    if (count > 0) return locator.first()
-  }
-  return undefined
+interface FileInputNode {
+  nodeId: number
 }
 
-/** 找「发表」按钮（按钮 / div 扮演的按钮都试）。 */
-async function findSubmit(page: Page) {
-  const candidates = [
-    page.getByRole('button', { name: /^(发表|发布)$/ }),
-    page.locator('button:has-text("发表")'),
-    page.getByText('发表', { exact: true }),
-  ]
-  for (const locator of candidates) {
-    const count = await locator.count().catch(() => 0)
-    if (count > 0) return locator.first()
-  }
-  return undefined
-}
-
-/** 描述输入框：优先 placeholder 含「描述」的，其次任意 textarea / contenteditable。 */
-async function findDescriptionBox(page: Page) {
-  const candidates = [
-    page.getByPlaceholder(/描述|说点什么|添加描述/),
-    page.locator('textarea'),
-    page.locator('[contenteditable="true"]'),
-  ]
-  for (const locator of candidates) {
-    const count = await locator.count().catch(() => 0)
-    if (count > 0) return locator.first()
-  }
-  return undefined
-}
-
-/** 填描述：textarea 用 fill，contenteditable 用 type。 */
-async function fillDescriptionBox(page: Page, text: string): Promise<boolean> {
-  const box = await findDescriptionBox(page)
-  if (box === undefined) return false
-  const tag = await box.evaluate(node => node.tagName.toLowerCase()).catch(() => '')
-  if (tag === 'textarea' || tag === 'input') {
-    await box.fill(text)
-  } else {
-    await box.click()
-    await box.type(text, { delay: 8 })
-  }
-  return true
-}
-
-/** 等扫码登录完成；返回登录后的 page。 */
-export async function waitForLogin(page: Page, options: {
-  timeoutSec: number
-  log: (level: 'info' | 'warn', text: string) => void
-  signal?: AbortSignal
-}): Promise<void> {
-  const deadline = Date.now() + options.timeoutSec * 1000
-  let noted = 0
-  for (;;) {
-    if (options.signal?.aborted === true) throw new Error('已停止')
-    if (!(await isLoginPage(page))) return
-    if (Date.now() > deadline) throw new Error(`扫码登录超时（${options.timeoutSec}s），请重新点发布`)
-    if (Date.now() - noted > 15_000) {
-      options.log('info', '等待扫码：请在打开的浏览器窗口里用微信扫一扫登录视频号助手…')
-      noted = Date.now()
+function collectFileInputs(rawNode: unknown, out: FileInputNode[], onlyVideo: boolean): void {
+  if (rawNode === undefined || rawNode === null || typeof rawNode !== 'object') return
+  const node = rawNode as Record<string, unknown>
+  const nodeName = String(node.nodeName ?? '')
+  if (nodeName === 'INPUT') {
+    const raw = node.attributes
+    const attrs: Record<string, string> = {}
+    if (Array.isArray(raw)) {
+      for (let index = 0; index < raw.length; index += 2) {
+        attrs[String(raw[index])] = String(raw[index + 1])
+      }
     }
-    await page.waitForTimeout(2000)
+    if (attrs.type === 'file' && (!onlyVideo || /video/i.test(attrs.accept ?? ''))) {
+      out.push({ nodeId: Number(node.nodeId) })
+    }
+  }
+  for (const key of ['children', 'shadowRoots', 'contentDocument', 'pseudoElements']) {
+    const kids = node[key]
+    if (Array.isArray(kids)) for (const kid of kids) collectFileInputs(kid, out, onlyVideo)
   }
 }
 
-/** 等上传完成：出现「上传完成」文案，或发表按钮变为可点。 */
-export async function waitForUpload(page: Page, options: {
+/** 用 CDP 把本地文件塞进编辑器 iframe 里的隐藏 file input（上传控件会延迟挂载，轮询等它）。 */
+export async function attachVideo(context: BrowserContext, page: Page, videoFile: string, timeoutMs = 30_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const cdp: CDPSession = await context.newCDPSession(page)
+    try {
+      const document = await cdp.send('DOM.getDocument', { depth: -1, pierce: true }) as unknown as { root?: Record<string, unknown> }
+      const candidates: FileInputNode[] = []
+      collectFileInputs(document.root, candidates, true)
+      if (candidates.length === 0) collectFileInputs(document.root, candidates, false)
+      const first = candidates[0]
+      if (first !== undefined) {
+        await cdp.send('DOM.setFileInputFiles', { files: [videoFile], nodeId: first.nodeId })
+        return
+      }
+    } finally {
+      await cdp.detach().catch(() => {})
+    }
+    if (Date.now() > deadline) throw new Error('编辑器里没找到视频上传入口（input[type=file]），页面可能改版')
+    await page.waitForTimeout(800)
+  }
+}
+
+/** 等视频上传完成：连续两次「没有取消上传、出现删除按钮」。 */
+export async function waitForUpload(frame: Frame, options: {
   timeoutSec: number
   log: (level: 'info' | 'warn', text: string) => void
   signal?: AbortSignal
 }): Promise<void> {
   const deadline = Date.now() + options.timeoutSec * 1000
+  let stable = 0
   let noted = 0
   for (;;) {
     if (options.signal?.aborted === true) throw new Error('已停止')
-    const text = await bodyText(page)
-    if (/上传完成|上传成功|视频已上传/.test(text)) return
-    if (/上传失败|转码失败/.test(text)) throw new Error('平台提示上传/转码失败，请到浏览器窗口查看详情')
-    const submit = await findSubmit(page)
-    if (submit !== undefined && (await submit.isEnabled().catch(() => false))) return
-    if (Date.now() > deadline) throw new Error('等待视频上传超时，请到浏览器窗口里查看上传进度')
+    const text = await frameText(frame)
+    if (/上传失败|转码失败/.test(text)) throw new Error('平台提示上传/转码失败，请到浏览器窗口查看')
+    const uploading = /取消上传/.test(text)
+    const uploaded = /删除/.test(text)
+    if (!uploading && uploaded) {
+      stable += 1
+      if (stable >= 2) return
+    } else {
+      stable = 0
+    }
+    if (Date.now() > deadline) throw new Error('等待视频上传超时，请到浏览器窗口查看上传进度')
     if (Date.now() - noted > 20_000) {
       const percent = text.match(/(\d{1,3})\s*%/)?.[1]
       options.log('info', percent === undefined ? '视频上传中…' : `视频上传中… ${percent}%`)
       noted = Date.now()
     }
-    await page.waitForTimeout(3000)
+    await frame.waitForTimeout(3000)
   }
 }
 
-/** 点发表并等结果，返回作品页 URL。 */
-export async function submitPost(page: Page, options: {
+/** 填描述 + 短标题（都在编辑器 iframe 里，用页面内 JS 触发编辑器状态）。 */
+export async function fillFields(frame: Frame, input: { description: string, title?: string }): Promise<void> {
+  await frame.evaluate((payload) => {
+    const editor = document.querySelector('div.input-editor[contenteditable]') as HTMLDivElement | null
+    if (editor !== null) {
+      editor.focus()
+      editor.innerHTML = ''
+      document.execCommand('insertText', false, payload.description)
+      editor.dispatchEvent(new Event('input', { bubbles: true }))
+      editor.blur()
+    }
+    if (payload.title !== undefined && payload.title !== '') {
+      const titleInput = [...document.querySelectorAll('input')]
+        .find(item => (item.placeholder ?? '').includes('短标题')) as HTMLInputElement | undefined
+      if (titleInput !== undefined) {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+        setter?.call(titleInput, payload.title)
+        titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+        titleInput.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    }
+  }, { description: input.description, title: input.title })
+}
+
+/** 真实鼠标点击「发表」：JS click 不会提交，必须走鼠标。 */
+export async function clickSubmit(page: Page, frame: Frame): Promise<void> {
+  const rect = await frame.evaluate(() => {
+    const button = [...document.querySelectorAll('button')].find(item => (item.innerText ?? '').trim() === '发表')
+    if (button === undefined) return null
+    button.scrollIntoView({ block: 'center' })
+    const box = button.getBoundingClientRect()
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2, top: box.top, bottom: box.bottom }
+  })
+  if (rect === null) throw new Error('没找到「发表」按钮：页面可能改版，浏览器窗口保留，可手动点发表')
+  await page.waitForTimeout(800)
+  const inView = rect.top >= 0 && rect.bottom <= (page.viewportSize()?.height ?? 900)
+  if (!inView) throw new Error('「发表」按钮不在可视区，请到浏览器窗口里手动点发表')
+  await page.mouse.click(rect.x, rect.y)
+}
+
+/** 等发布结果：成功 / 失败 / 被二次确认拦下。 */
+export async function waitForPublishResult(page: Page, frame: Frame, options: {
   log: (level: 'info' | 'warn', text: string) => void
   signal?: AbortSignal
 }): Promise<string> {
-  const submit = await findSubmit(page)
-  if (submit === undefined) throw new Error('没找到「发表」按钮：页面可能改版，浏览器窗口保留，可手动点发表')
-  await submit.click()
   const deadline = Date.now() + 120_000
   let confirmed = false
   for (;;) {
     if (options.signal?.aborted === true) throw new Error('已停止')
-    await page.waitForTimeout(1500)
-    const text = await bodyText(page)
-    const confirm = page.getByRole('button', { name: /^(确认|确定|继续发表)$/ })
-    if (!confirmed && (await confirm.count().catch(() => 0)) > 0) {
-      await confirm.first().click().catch(() => {})
-      confirmed = true
-      continue
+    await page.waitForTimeout(2500)
+    const text = await frameText(frame)
+    if (/发表成功|发布成功|已发表/.test(text)) return page.url()
+    if (/发表失败|违规|不可发布|请完善/.test(text)) {
+      const line = text.split('\n').map(item => item.trim()).find(item => /失败|违规|不可发布|请完善/.test(item))
+      throw new Error(`平台提示：${line ?? '发布失败'}`)
     }
-    if (/发表成功|发布成功/.test(text) || /\/platform\/post\/(list|success)/.test(page.url())) return page.url()
-    if (/发表失败|违规|不可发布/.test(text)) throw new Error('平台提示发布失败，请到浏览器窗口查看详情')
+    if (!confirmed) {
+      const confirmedClick = await frame.evaluate(() => {
+        const button = [...document.querySelectorAll('button')].find(item => /^(确认|确定|继续发表)$/.test((item.innerText ?? '').trim()))
+        if (button === undefined) return false
+        button.click()
+        return true
+      }).catch(() => false)
+      if (confirmedClick) {
+        confirmed = true
+        options.log('info', '点了发表后出现二次确认，已自动确认')
+        continue
+      }
+    }
     if (Date.now() > deadline) throw new Error('点了发表但没等到成功提示，请到浏览器窗口确认')
   }
 }
@@ -226,13 +270,9 @@ export interface PublishChannelsOptions {
   signal?: AbortSignal
   log: (level: 'info' | 'warn', text: string) => void
   onProgress: (progress: PublishProgress) => void
-  /** 等扫码的最长时间（秒）。 */
   loginTimeoutSec?: number
-  /** 等上传完成的最长时间（秒）。 */
   uploadTimeoutSec?: number
-  /** 失败时是否把浏览器窗口留着（默认留着，方便手动接管）。 */
   keepOpenOnError?: boolean
-  /** 截图输出目录（运行目录）。 */
   runDir?: string
 }
 
@@ -265,51 +305,50 @@ export async function publishToChannels(options: PublishChannelsOptions): Promis
     const page = context.pages()[0] ?? await context.newPage()
     onProgress({ status: 'waiting-login', message: '打开视频号创作页…' })
     await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+    await page.waitForTimeout(1500)
 
     if (await isLoginPage(page)) {
       onProgress({ status: 'waiting-login', message: '等待扫码登录…' })
       log('info', '视频号未登录：请在弹出的浏览器窗口里用微信扫码，登录后自动继续')
-      await waitForLogin(page, {
-        timeoutSec: options.loginTimeoutSec ?? 300,
-        log,
-        ...(signal === undefined ? {} : { signal }),
-      })
-      if (!/post\/create/.test(page.url())) {
-        await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+      const deadline = Date.now() + (options.loginTimeoutSec ?? 300) * 1000
+      for (;;) {
+        if (signal?.aborted === true) throw new Error('已停止')
+        if (!(await isLoginPage(page))) break
+        if (Date.now() > deadline) throw new Error('扫码登录超时，请重新点发布')
+        await page.waitForTimeout(2000)
       }
+      await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+      await page.waitForTimeout(1500)
     }
-    if (await isLoginPage(page)) throw new Error('登录后仍停留在登录页，请重试')
+
+    const frame = await editorFrame(page)
+    if (frame === undefined) throw new Error('没等到视频号编辑器加载（可能未登录或页面改版），浏览器窗口保留可手动处理')
+
+    // 起始页可能弹「将此次编辑保留?」，选择不保存，从干净状态开始。
+    await frame.evaluate(() => {
+      const discard = [...document.querySelectorAll('button')].find(item => (item.innerText ?? '').trim() === '不保存')
+      discard?.click()
+    }).catch(() => {})
 
     onProgress({ status: 'uploading', message: '上传成片…' })
     log('info', `开始上传：${videoFile}`)
-    const input = await findVideoInput(page)
-    if (input === undefined) throw new Error('页面上没找到视频上传入口（input[type=file]），页面可能改版')
-    await input.setInputFiles(videoFile)
-    await waitForUpload(page, {
+    await attachVideo(context, page, videoFile)
+    await waitForUpload(frame, {
       timeoutSec: options.uploadTimeoutSec ?? 900,
       log,
       ...(signal === undefined ? {} : { signal }),
     })
     log('info', '视频上传完成')
 
-    if (title !== undefined && title.trim() !== '') {
-      const titleBox = page.getByPlaceholder(/标题|短标题/).first()
-      if ((await titleBox.count().catch(() => 0)) > 0) {
-        await titleBox.fill(title.trim()).catch(() => {})
-      }
-    }
-
-    onProgress({ status: 'publishing', message: '填写描述…' })
-    if (description.trim() !== '') {
-      const filled = await fillDescriptionBox(page, description.trim())
-      if (filled) log('info', '描述已填写')
-      else log('warn', '没找到描述输入框，跳过描述（视频已上传，可在浏览器窗口手动补）')
-    }
+    onProgress({ status: 'publishing', message: '填写标题和描述…' })
+    await fillFields(frame, { description, ...(title === undefined ? {} : { title }) })
+    log('info', '标题和描述已填写')
 
     onProgress({ status: 'publishing', message: '点发表…' })
-    const postUrl = await submitPost(page, { log, ...(signal === undefined ? {} : { signal }) })
+    await clickSubmit(page, frame)
+    const postUrl = await waitForPublishResult(page, frame, { log, ...(signal === undefined ? {} : { signal }) })
     const screenshot = await capture(page, options.runDir, 'post-ok')
-    log('info', `发布完成：${postUrl === '' ? '页面已提交' : postUrl}`)
+    log('info', '已发表成功')
     keepOpen = false
     return { postUrl, ...(screenshot === undefined ? {} : { screenshot }), browser: how }
   } catch (error) {
