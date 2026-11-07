@@ -106,6 +106,8 @@ html[${ACTIVE_ATTR}] :is([data-pane="conversation"],[class*="centerCol"])>:not($
 .vr-run-text{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
 .vr-run-title{font-size:12px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vr-run-meta{font-size:10.5px;color:var(--dsw-alias-label-secondary,color-mix(in srgb,currentColor 62%,transparent));display:flex;gap:6px;align-items:center}
+.vr-pill-x{all:unset;cursor:pointer;opacity:.65;font-size:12px;line-height:1;padding:0 2px}
+.vr-pill-x:hover{opacity:1}
 .vr-pill{display:inline-flex;align-items:center;gap:4px;padding:1px 6px;border-radius:999px;font-size:10px;
   background:color-mix(in srgb,currentColor 9%,transparent);color:var(--dsw-alias-label-secondary,color-mix(in srgb,currentColor 62%,transparent));white-space:nowrap}
 .vr-pill[data-tone="ok"]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#18a058) 14%,transparent);

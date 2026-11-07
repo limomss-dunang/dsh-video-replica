@@ -318,6 +318,15 @@ export const PUBLISH_PLATFORMS: Array<{ value: PublishPlatform, label: string, l
 
 export type PublishStatus = 'idle' | 'waiting-login' | 'uploading' | 'publishing' | 'done' | 'failed'
 
+/** 发布文案（标题 / 话题 / 描述），由文本模型生成后可手动改。 */
+export interface PublishCaption {
+  title: string
+  description: string
+  topics: string[]
+  model?: string
+  at: number
+}
+
 /** 一次发布的运行状态（落盘，刷新不丢）。 */
 export interface PublishState {
   platform: PublishPlatform
@@ -327,6 +336,10 @@ export interface PublishState {
   description?: string
   /** 发布后页面上取到的作品链接（拿得到才有）。 */
   postUrl?: string
+  /** 自动生成的发布文案（标题 / 话题 / 描述）。 */
+  caption?: PublishCaption
+  /** 最终话题（用户在界面上删改后的结果）。 */
+  topics?: string[]
   /** 关键步骤截图（运行目录内相对路径）。 */
   screenshot?: string
   startedAt?: number

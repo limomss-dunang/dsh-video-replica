@@ -538,6 +538,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                         busy={busy}
                         step={stepState as StepState}
                         onRun={() => void act(() => api.runStep(run.id, 'publish'))}
+                        onCaption={async () => { await act(() => api.caption(run.id), { label: '正在生成标题和话题…' }) }}
                         onPublish={input => void act(() => api.publish(run.id, { platform: 'channels', ...input }))}
                       />
                     )}
@@ -1480,17 +1481,53 @@ interface StagePublishProps {
   busy: boolean
   step: StepState
   onRun: () => void
-  onPublish: (input: { title: string, description: string }) => void
+  onCaption: () => Promise<void>
+  onPublish: (input: { title: string, description: string, topics: string[] }) => void
 }
 
 /** 第七步：一键发布（先只做视频号）。 */
 function StagePublish(props: StagePublishProps): JSX.Element {
   const compose = props.run.compose
   const publish = props.run.publish
-  const defaultDescription = props.run.analysis?.summary?.trim() ?? props.run.title
-  const [title, setTitle] = useState(publish?.title ?? '')
-  const [description, setDescription] = useState(publish?.description ?? defaultDescription)
+  const caption = publish?.caption
+  const [title, setTitle] = useState(caption?.title ?? publish?.title ?? '')
+  const [description, setDescription] = useState(caption?.description ?? publish?.description ?? '')
+  const [topics, setTopics] = useState<string[]>(publish?.topics ?? caption?.topics ?? [])
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState('')
+  const askedAuto = useRef(false)
+  const seenCaptionAt = useRef<number | undefined>(caption?.at)
+
+  const regenerate = async (): Promise<void> => {
+    setGenerating(true)
+    setGenError('')
+    try {
+      await props.onCaption()
+    } catch (error) {
+      setGenError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  // 新文案落盘后同步到输入框（用户改过的内容只在重新生成时被覆盖）。
+  useEffect(() => {
+    if (caption === undefined || caption.at === seenCaptionAt.current) return
+    seenCaptionAt.current = caption.at
+    setTitle(caption.title)
+    setDescription(caption.description)
+    setTopics(caption.topics)
+  }, [caption?.at])
+
+  // 第一次进入这一步、且还没有文案时，自动生成一版。
+  useEffect(() => {
+    if (askedAuto.current || compose === undefined || caption !== undefined) return
+    askedAuto.current = true
+    void regenerate()
+  }, [compose === undefined, caption === undefined])
+
   const running = publish?.status === 'waiting-login' || publish?.status === 'uploading' || publish?.status === 'publishing'
+  const ready = description.trim() !== '' && !generating
   return (
     <>
       <StageHeader title={STEP_LABELS.publish} step={props.step} onRun={props.onRun} busy={props.busy} />
@@ -1506,10 +1543,34 @@ function StagePublish(props: StagePublishProps): JSX.Element {
                   <select className="vr-input" style={{ width: 160 }} value="channels" disabled>
                     <option value="channels">视频号</option>
                   </select>
+                  <button type="button" className="vr-btn" data-size="sm" disabled={generating || props.busy} onClick={() => void regenerate()}>
+                    {generating ? tt('captionGenerating') : tt('captionRegenerate')}
+                  </button>
                 </div>
+                {genError !== '' && <div className="vr-banner" data-tone="err">{tt('captionFailed')}：{genError}</div>}
                 <div className="vr-field">
                   <label className="vr-label">{tt('publishTitle')}</label>
-                  <input className="vr-input" value={title} onChange={event => setTitle(event.target.value)} placeholder="可留空" />
+                  <input className="vr-input" value={title} maxLength={16} onChange={event => setTitle(event.target.value)} placeholder={generating ? tt('captionGenerating') : '可留空'} />
+                </div>
+                <div className="vr-field">
+                  <label className="vr-label">{tt('publishTopics')}</label>
+                  <div className="vr-row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                    {topics.length === 0 && <span className="vr-hint">{generating ? tt('captionGenerating') : '—'}</span>}
+                    {topics.map(topic => (
+                      <span key={topic} className="vr-pill">
+                        #{topic}
+                        <button
+                          type="button"
+                          className="vr-pill-x"
+                          aria-label={`remove ${topic}`}
+                          onClick={() => setTopics(current => current.filter(item => item !== topic))}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <span className="vr-hint">{tt('captionHint')}</span>
                 </div>
                 <div className="vr-field">
                   <label className="vr-label">{tt('publishDesc')}</label>
@@ -1521,8 +1582,8 @@ function StagePublish(props: StagePublishProps): JSX.Element {
                     type="button"
                     className="vr-btn"
                     data-variant="primary"
-                    disabled={props.busy || running || description.trim() === ''}
-                    onClick={() => props.onPublish({ title: title.trim(), description: description.trim() })}
+                    disabled={props.busy || running || !ready}
+                    onClick={() => props.onPublish({ title: title.trim(), description: description.trim(), topics })}
                   >
                     {running ? `${publish?.status === 'waiting-login' ? '等待扫码登录…' : publish?.status === 'uploading' ? '上传中…' : '发表中…'}` : tt('publishNow')}
                   </button>

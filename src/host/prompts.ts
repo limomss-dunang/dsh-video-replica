@@ -438,3 +438,47 @@ export function productImageNames(images: ProductImage[]): string[] {
 export function recommendedVariant(variants: ScriptVariant[], recommendedId: string): ScriptVariant | undefined {
   return variants.find(variant => variant.id === recommendedId) ?? variants[0]
 }
+
+// ---------------------------------------------------------------------------
+// 第 7 步：发布文案（标题 / 话题 / 描述）
+// ---------------------------------------------------------------------------
+
+export const CAPTION_SYSTEM =
+  '你是短视频账号运营，专门给已经做好的竖屏短视频写发布文案。你懂视频号的流量分发：短标题决定点击，话题决定推荐池，描述决定完播后的互动。只输出严格 JSON，不要解释、不要 Markdown。'
+
+/** 发布文案提示词：吃拆解结论 + 仿写脚本，产出发布用的标题/话题/描述。 */
+export function captionPrompt(options: {
+  platform: string
+  sourceTitle: string
+  analysis: AnalysisReport
+  variantTitle: string
+  variantLines: string[]
+  targetDurationSec: number
+  extra?: string
+}): string {
+  const lines = options.variantLines.slice(0, 6).map((line, index) => `${index + 1}. ${line}`).join('\n')
+  return [
+    `平台：${options.platform}`,
+    `成片时长：${options.targetDurationSec.toFixed(0)} 秒`,
+    `源片标题（不要照抄，只用来理解题材）：${options.sourceTitle}`,
+    '',
+    '这条片子在讲什么（拆解结论）：',
+    `- 创意核心：${options.analysis.coreIdea}`,
+    `- 手法：${options.analysis.creativeDevice}`,
+    `- 为什么成立：${options.analysis.whyItWorks}`,
+    `- 一句话概括：${options.analysis.summary}`,
+    '',
+    `仿写后的版本标题：${options.variantTitle}`,
+    '仿写后的台词片段：',
+    lines,
+    options.extra === undefined || options.extra.trim() === '' ? '' : `额外要求：${options.extra.trim()}`,
+    '',
+    '请写三样东西：',
+    '1. title：视频号「短标题」。不超过 16 个汉字，必须是钩子（反差、痛点、悬念三选一），不要书名号/引号/emoji/句末标点，不要出现「复刻」「搬运」「AI 生成」这类词，不要照抄源片标题。',
+    '2. topics：5 到 8 个话题，不带 # 号。三层搭配：2 个平台流量话题（从 AI创作、短视频、职场、搞笑、生活记录 里挑）、2 个场景或人群话题、1 到 3 个来自这条片子具体元素的话题。不要生造没有流量的词，不要出现品牌名。',
+    '3. description：70 到 130 字，最多两段。第一句 15 字内做钩子；中间一句讲清「发生了什么 + 反转在哪」；最后一句用问句引互动。口语化、有情绪；不要写话题、不要带 #、不要出现「本视频」「复刻」「AI 生成」。',
+    '',
+    '只输出一个 JSON 对象：',
+    '{"title":"","description":"","topics":["",""]}',
+  ].filter(line => line !== '').join('\n')
+}

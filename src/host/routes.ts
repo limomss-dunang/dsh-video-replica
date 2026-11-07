@@ -25,6 +25,7 @@ import type { DshModels } from './dsh.ts'
 import { completeText, describeEndpoint, resolveEndpoint, usesDsh } from './endpoint-resolver.ts'
 import type { EndpointConfig } from '../shared/types.ts'
 import { regenerateFrame, regenerateSegment, type PipelineContext } from './pipeline.ts'
+import { composePostText, generateCaption } from './caption.ts'
 import { CAMERA_MOVES, SHOT_TYPES } from './prompts.ts'
 import { buildPromptPreview } from './pipeline.ts'
 import { asString, isLoopbackRequest, messageOf } from './util.ts'
@@ -425,19 +426,64 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
         await engine.start(runId, { from: step, autoAdvance: false })
         break
       }
+      case 'caption': {
+        // 发布文案：用文本模型生成标题 / 话题 / 描述，写进 run.publish.caption。
+        const config = await configs.read()
+        const caption = await generateCaption({
+          config,
+          ...(dsh === undefined ? {} : { dsh }),
+          run,
+          signal: new AbortController().signal,
+          log: (id, level, text) => store.log(run, id, level, text),
+        }, { ...(asString(body.extra).trim() === '' ? {} : { extra: asString(body.extra).trim() }) })
+        const current = run.publish
+        run.publish = {
+          platform: current?.platform ?? 'channels',
+          status: current?.status ?? 'idle',
+          message: current?.message ?? '待发布',
+          ...(current ?? {}),
+          caption,
+          title: caption.title,
+          description: caption.description,
+          topics: caption.topics,
+        }
+        await store.flush(runId)
+        break
+      }
       case 'publish': {
         // 第七步：带发布参数启动（手动步骤，不走自动推进）。
         const platform = asString(body.platform, 'channels')
         if (platform !== 'channels') throw new Error('暂只支持发布到视频号')
-        const title = asString(body.title).trim()
-        const description = asString(body.description).trim()
+        const config = await configs.read()
+        const titleInput = asString(body.title).trim()
+        const descriptionInput = asString(body.description).trim()
+        const topicsInput = Array.isArray(body.topics)
+          ? body.topics.map(item => asString(item).trim().replace(/^#+/, '')).filter(item => item !== '')
+          : undefined
+
+        // 没填描述就先生成一版文案（标题 / 话题 / 描述一起出来）。
+        let caption = run.publish?.caption
+        if (descriptionInput === '' && caption === undefined) {
+          caption = await generateCaption({
+            config,
+            ...(dsh === undefined ? {} : { dsh }),
+            run,
+            signal: new AbortController().signal,
+            log: (id, level, text) => store.log(run, id, level, text),
+          })
+        }
+        const title = titleInput !== '' ? titleInput : (caption?.title ?? '')
+        const description = descriptionInput !== '' ? descriptionInput : (caption?.description ?? '')
+        const topics = topicsInput ?? caption?.topics ?? run.publish?.topics ?? []
         run.publish = {
           platform: 'channels',
+          ...(run.publish ?? {}),
           status: 'idle',
           message: '待发布',
+          ...(caption === undefined ? {} : { caption }),
           ...(title === '' ? {} : { title }),
-          ...(description === '' ? {} : { description }),
-          ...(run.publish?.startedAt === undefined ? {} : { startedAt: run.publish.startedAt }),
+          topics,
+          description: composePostText(description, topics),
         }
         await store.flush(runId)
         await engine.start(runId, { from: 'publish', autoAdvance: false })

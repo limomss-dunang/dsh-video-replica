@@ -197,6 +197,22 @@
       { id: 'compose', status: 'pending', progress: 0, message: '待执行' },
       { id: 'publish', status: 'pending', progress: 0, message: '待执行' },
     ],
+    compose: { file: 'final.mp4', durationSec: 31.4, width: 1080, height: 1920, hasNarration: true, createdAt: now - 300_000 },
+    publish: {
+      platform: 'channels',
+      status: 'idle',
+      message: '待发布',
+      title: '领导画饼，AI 当真了',
+      description: '领导说先把饼做出来，我让 AI 当真了。三句话讲完一个方案，饼就端上桌了。你说这算不算高效——还是我太听话？',
+      topics: ['AI创作', '职场日常', '打工人', '画饼', 'AI短剧'],
+      caption: {
+        title: '领导画饼，AI 当真了',
+        description: '领导说先把饼做出来，我让 AI 当真了。三句话讲完一个方案，饼就端上桌了。你说这算不算高效——还是我太听话？',
+        topics: ['AI创作', '职场日常', '打工人', '画饼', 'AI短剧'],
+        model: 'dimexplore / deepseek-v4-pro（DSH 已配置）',
+        at: now - 120_000,
+      },
+    },
     source: { platform: 'douyin', provider: 'api', videoFile: 'source/source.mp4', title: '下午三点，同事递来的这一杯', author: '茉知味', durationSec: 31.4, width: 1080, height: 1920, fps: 30 },
     productImages: [{ file: 'products/a.png', name: 'product-main.png', bytes: 240_000, createdAt: now - 600_000 }],
     frames: [

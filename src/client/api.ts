@@ -172,7 +172,11 @@ export class VideoReplicaApi {
     return this.action({ runId, action: 'regenerate-frame', segmentIndex, ...(prompt === undefined ? {} : { prompt }) })
   }
 
-  publish(runId: string, input: { platform?: string, title?: string, description?: string }): Promise<unknown> {
+  caption(runId: string, extra?: string): Promise<unknown> {
+    return this.action({ runId, action: 'caption', ...(extra === undefined ? {} : { extra }) })
+  }
+
+  publish(runId: string, input: { platform?: string, title?: string, description?: string, topics?: string[] }): Promise<unknown> {
     return this.action({ runId, action: 'publish', ...input })
   }
 
