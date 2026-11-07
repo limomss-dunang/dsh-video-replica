@@ -188,6 +188,25 @@ export class VideoReplicaApi {
     return this.action({ runId, action: 'preview-subtitles' }) as unknown as Promise<{ items?: Array<{ index: number, startSec: number, endSec: number, text: string, segmentIndex: number }>, file?: string }>
   }
 
+  async uploadCover(runId: string, file: File): Promise<RunState> {
+    const response = await fetch(`${API.upload}?runId=${encodeURIComponent(runId)}&kind=cover&name=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'content-type': file.type || 'application/octet-stream' },
+      body: file,
+    })
+    const envelope = await response.json() as ApiEnvelope<{ run: RunState }>
+    if (envelope.ok !== true) throw new Error(envelope.error ?? '封面上传失败')
+    return (envelope.value as { run: RunState }).run
+  }
+
+  coverFromFrame(runId: string, atSec: number): Promise<unknown> {
+    return this.action({ runId, action: 'cover-from-frame', atSec })
+  }
+
+  coverClear(runId: string): Promise<unknown> {
+    return this.action({ runId, action: 'cover-clear' })
+  }
+
   setSubtitleText(runId: string, value: 'asr' | 'script'): Promise<unknown> {
     return this.action({ runId, action: 'set-subtitle-text', value })
   }

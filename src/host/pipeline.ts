@@ -1870,7 +1870,7 @@ function defaultPublishText(run: RunState): string {
 }
 
 async function stepPublish(ctx: PipelineContext): Promise<void> {
-  const { run } = ctx
+  const { run, config } = ctx
   const compose = run.compose
   if (compose === undefined) throw new Error('还没有成片：请先执行「合成成片」再发布')
   const platform = run.publish?.platform ?? 'channels'
@@ -1902,6 +1902,8 @@ async function stepPublish(ctx: PipelineContext): Promise<void> {
       videoFile,
       description,
       ...(title === '' ? {} : { title }),
+      ...(run.cover === undefined ? {} : { coverFile: abs(ctx, run.cover.file) }),
+      ffmpegPath: config.media.ffmpegPath,
       signal: ctx.signal,
       runDir: dirOf(ctx),
       log: (level: 'info' | 'warn', text: string) => ctx.log('publish', level, text),

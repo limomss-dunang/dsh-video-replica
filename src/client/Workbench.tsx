@@ -576,6 +576,9 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                         onRun={() => void act(() => api.runStep(run.id, 'publish'))}
                         onCaption={async () => { await act(() => api.caption(run.id), { label: '正在生成标题和话题…' }) }}
                         onPublish={input => void act(() => api.publish(run.id, { ...input, platform: input.platform }))}
+                        onCoverUpload={file => void act(async () => { await api.uploadCover(run.id, file) })}
+                        onCoverFrame={atSec => void act(() => api.coverFromFrame(run.id, atSec))}
+                        onCoverClear={() => void act(() => api.coverClear(run.id))}
                       />
                     )}
                     {selected === 'compose' && (
@@ -1651,6 +1654,9 @@ interface StagePublishProps {
   onRun: () => void
   onCaption: () => Promise<void>
   onPublish: (input: { platform: PublishPlatform, title: string, description: string, topics: string[] }) => void
+  onCoverUpload: (file: File) => void
+  onCoverFrame: (atSec: number) => void
+  onCoverClear: () => void
 }
 
 /** 第七步：一键发布（视频号 / 抖音，各自独立发布）。 */
@@ -1665,6 +1671,7 @@ function StagePublish(props: StagePublishProps): JSX.Element {
   const [topics, setTopics] = useState<string[]>(state?.topics ?? caption?.topics ?? [])
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState('')
+  const [coverSec, setCoverSec] = useState('1')
   const askedAuto = useRef(false)
   const seenCaptionAt = useRef<number | undefined>(caption?.at)
 
@@ -1782,6 +1789,64 @@ function StagePublish(props: StagePublishProps): JSX.Element {
               </div>
             </Card>
           )}
+      {compose !== undefined && (
+        <Card title={tt('publishCover')} hint={tt('coverHint')}>
+          <div className="vr-row" style={{ gap: 12, alignItems: 'flex-start' }}>
+            {props.run.cover === undefined
+              ? <span className="vr-hint">未设置（用平台自动截帧）</span>
+              : (
+                  <img
+                    src={mediaUrl(props.run.id, props.run.cover.file, { version: props.run.cover.createdAt })}
+                    alt="cover"
+                    style={{ width: 180, borderRadius: 10 }}
+                    loading="lazy"
+                  />
+                )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="vr-row" style={{ gap: 8, alignItems: 'center' }}>
+                <label className="vr-btn" data-size="sm" style={{ cursor: 'pointer' }}>
+                  {tt('coverUpload')}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    style={{ display: 'none' }}
+                    onChange={event => {
+                      const file = event.target.files?.[0]
+                      event.target.value = ''
+                      if (file !== undefined) void props.onCoverUpload(file)
+                    }}
+                  />
+                </label>
+                <input
+                  className="vr-input"
+                  style={{ width: 64 }}
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={coverSec}
+                  onChange={event => setCoverSec(event.target.value)}
+                  aria-label="封面截帧秒数"
+                />
+                <button
+                  type="button"
+                  className="vr-btn"
+                  data-size="sm"
+                  disabled={props.busy}
+                  onClick={() => void props.onCoverFrame(Number(coverSec) || 1)}
+                >
+                  {tt('coverFromFrame')}
+                </button>
+                {props.run.cover !== undefined && (
+                  <button type="button" className="vr-btn" data-size="sm" disabled={props.busy} onClick={() => void props.onCoverClear()}>
+                    {tt('coverClear')}
+                  </button>
+                )}
+              </div>
+              <span className="vr-hint">发布时会自动裁成 3:4（个人主页/竖封面）与 4:3（分享/横封面）上传。</span>
+            </div>
+          </div>
+        </Card>
+      )}
       {PUBLISH_PLATFORMS.some(item => props.run.publishes?.[item.value] !== undefined) && (
         <Card title={tt('publishStatus')}>
           {PUBLISH_PLATFORMS.map(item => {

@@ -379,6 +379,15 @@ export interface PublishState {
   error?: string
 }
 
+/** 发布封面：一张主图，发布时按平台裁成 3:4 / 4:3。 */
+export interface RunCover {
+  file: string
+  source: 'frame' | 'upload'
+  /** 截帧来源的秒数。 */
+  atSec?: number
+  createdAt: number
+}
+
 export interface RunState {
   id: string
   /** 本次任务的运行目录绝对路径（素材、成片、日志都在它下面）。 */
@@ -406,6 +415,8 @@ export interface RunState {
   subjects?: Array<{ name: string, description: string, anchorFile: string, createdAt: number }>
   /** 第七步：一键发布的运行状态。 */
   publish?: PublishState
+  /** 发布封面（不设则用平台自动截帧）。 */
+  cover?: RunCover
   /** 各平台的发布结果（一次任务可以分别发到视频号 / 抖音）。 */
   publishes?: Partial<Record<PublishPlatform, PublishState>>
   /** 本次仿写方式覆盖（不填则用设置里的全局默认）。 */

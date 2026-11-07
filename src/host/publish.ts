@@ -267,6 +267,10 @@ export interface PublishChannelsOptions {
   videoFile: string
   description: string
   title?: string
+  /** 发布封面主图（不传则由平台自动截帧）。 */
+  coverFile?: string
+  /** ffmpeg 可执行文件（裁封面用）。 */
+  ffmpegPath?: string
   signal?: AbortSignal
   log: (level: 'info' | 'warn', text: string) => void
   onProgress: (progress: PublishProgress) => void
@@ -295,7 +299,217 @@ async function capture(page: Page, runDir: string | undefined, tag: string): Pro
   }
 }
 
-/** 发布一条成片到视频号。 */
+// ---------------------------------------------------------------------------
+// 发布封面
+// ---------------------------------------------------------------------------
+
+export interface CoverCrops {
+  portrait: string
+  landscape: string
+}
+
+/** 把封面主图裁成 3:4 与 4:3 两张（平台卡片用）。 */
+export async function prepareCoverCrops(options: {
+  coverFile: string
+  runDir: string
+  ffmpegPath: string
+}): Promise<CoverCrops | undefined> {
+  const dir = join(options.runDir, 'cover')
+  await mkdir(dir, { recursive: true })
+  const portrait = join(dir, 'cover-3x4.jpg')
+  const landscape = join(dir, 'cover-4x3.jpg')
+  const run = async (output: string, w: number, h: number): Promise<void> => {
+    const { spawn } = await import('node:child_process')
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(options.ffmpegPath, [
+        '-hide_banner', '-loglevel', 'error', '-y', '-i', options.coverFile,
+        '-vf', `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`,
+        '-frames:v', '1', '-q:v', '2', output,
+      ], { stdio: 'ignore' })
+      child.on('error', reject)
+      child.on('exit', code => (code === 0 ? resolve() : reject(new Error(`ffmpeg 裁封面失败（${code}）`))))
+    })
+  }
+  try {
+    await run(portrait, 1080, 1440)
+    await run(landscape, 1440, 1080)
+    return { portrait, landscape }
+  } catch {
+    return undefined
+  }
+}
+
+/** 用 CDP 把图片塞进当前页面里 accept 含 image 的 file input（跨 frame 找）。 */
+/** 点「上传封面」按钮走文件选择器（比猜 input 更稳），失败再退回直接塞 input。 */
+async function setCoverByChooser(page: Page, imageFile: string): Promise<boolean> {
+  const buttons = page.getByText('上传封面', { exact: true })
+  const count = await buttons.count().catch(() => 0)
+  for (let index = count - 1; index >= 0; index -= 1) {
+    const button = buttons.nth(index)
+    if (!(await button.isVisible().catch(() => false))) continue
+    const chooser = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => undefined)
+    await button.click().catch(() => {})
+    const event = await chooser
+    if (event !== undefined) {
+      await event.setFiles(imageFile).catch(() => {})
+      return true
+    }
+  }
+  return false
+}
+
+async function setCoverImageInput(context: BrowserContext, page: Page, imageFile: string): Promise<boolean> {
+  // 先试 Playwright 定位：抖音页面上有多个图片 file input（商品封面等），
+  // 用最后一个「位于可见弹窗内」的输入框，避免把封面上传到别的控件里。
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const candidates = page.locator('input[type=file][accept*="image" i]')
+    const count = await candidates.count().catch(() => 0)
+    if (count > 0) {
+      for (let index = count - 1; index >= 0; index -= 1) {
+        const input = candidates.nth(index)
+        const visible = await input.isVisible().catch(() => false)
+        const box = visible ? await input.boundingBox().catch(() => null) : null
+        if (visible && box !== null) {
+          await input.setInputFiles(imageFile).catch(() => {})
+          return true
+        }
+      }
+      // 全都不可见时退回到最后一个（上传按钮常是隐藏 input + 自定义按钮）。
+      await candidates.nth(count - 1).setInputFiles(imageFile).catch(() => {})
+      return true
+    }
+    await page.waitForTimeout(800)
+  }
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    const cdp = await context.newCDPSession(page)
+    try {
+      const document = await cdp.send('DOM.getDocument', { depth: -1, pierce: true }) as unknown as { root?: Record<string, unknown> }
+      const candidates: Array<{ nodeId: number, accept: string }> = []
+      const walk = (node: unknown): void => {
+        if (node === undefined || node === null || typeof node !== 'object') return
+        const raw = node as Record<string, unknown>
+        if (raw.nodeName === 'INPUT' && Array.isArray(raw.attributes)) {
+          const attrs: Record<string, string> = {}
+          const list = raw.attributes as unknown[]
+          for (let index = 0; index < list.length; index += 2) attrs[String(list[index])] = String(list[index + 1])
+          if (attrs.type === 'file' && /image/i.test(attrs.accept ?? '')) candidates.push({ nodeId: Number(raw.nodeId), accept: attrs.accept })
+        }
+        for (const key of ['children', 'shadowRoots', 'contentDocument', 'pseudoElements']) {
+          const kids = (raw as Record<string, unknown>)[key]
+          if (Array.isArray(kids)) for (const kid of kids) walk(kid)
+        }
+      }
+      walk(document.root)
+      const first = candidates[0]
+      if (first !== undefined) {
+        await cdp.send('DOM.setFileInputFiles', { files: [imageFile], nodeId: first.nodeId })
+        return true
+      }
+    } finally {
+      await cdp.detach().catch(() => {})
+    }
+    await page.waitForTimeout(800)
+  }
+  return false
+}
+
+/** 视频号：分别设置「个人主页卡片 3:4」与「分享卡片 4:3」封面。 */
+export async function applyChannelsCover(context: BrowserContext, page: Page, crops: CoverCrops, log: (level: 'info' | 'warn', text: string) => void): Promise<void> {
+  const jobs: Array<{ kind: 'portrait' | 'landscape', wrap: string, label: string, file: string }> = [
+    { kind: 'portrait', wrap: 'vertical-img-wrap', label: '个人主页卡片 3:4', file: crops.portrait },
+    { kind: 'landscape', wrap: 'horizon-img-wrap', label: '分享卡片 4:3', file: crops.landscape },
+  ]
+  for (const job of jobs) {
+    const frame = await editorFrame(page)
+    if (frame === undefined) return
+    const opened = await frame.evaluate((wrapClass) => {
+      const wrap = document.querySelector(`.${wrapClass}`)
+      if (wrap === null) return false
+      const button = wrap.querySelector('.edit-btn') ?? [...wrap.querySelectorAll('*')].find(item => ((item as HTMLElement).innerText ?? '').trim() === '编辑')
+      if (button === undefined || button === null) return false
+      ;(button as HTMLElement).click()
+      return true
+    }, job.wrap).catch(() => false)
+    if (!opened) { log('warn', `视频号：没找到${job.label}的封面编辑入口，跳过`); continue }
+    await page.waitForTimeout(1500)
+    const uploaded = (await setCoverByChooser(page, job.file)) || (await setCoverImageInput(context, page, job.file))
+    if (!uploaded) { log('warn', `视频号：${job.label}封面上传入口没出现，跳过`); continue }
+    await page.waitForTimeout(1500)
+    const confirmed = await frame.evaluate(() => {
+      const button = [...document.querySelectorAll('button')].find(item => (item.innerText ?? '').trim() === '确认')
+      if (button === undefined) return false
+      ;(button as HTMLElement).click()
+      return true
+    }).catch(() => false)
+    // 等弹窗真正关掉再处理下一张，否则第二次点击会落在旧弹窗上。
+    for (let waitIndex = 0; waitIndex < 10; waitIndex += 1) {
+      await page.waitForTimeout(500)
+      const open = await (await editorFrame(page))?.evaluate(() => /编辑(个人主页|分享)卡片/.test(document.body.innerText)).catch(() => false)
+      if (open !== true) break
+    }
+    log(confirmed ? 'info' : 'warn', confirmed ? `视频号：已设置${job.label}封面` : `视频号：${job.label}封面没找到确认按钮，已上传但可能未生效`)
+  }
+}
+
+/** 抖音：先设横封面 4:3；平台若弹出「设置竖封面获更多流量」就顺着引导设竖封面。 */
+export async function applyDouyinCover(context: BrowserContext, page: Page, crops: CoverCrops, log: (level: 'info' | 'warn', text: string) => void): Promise<void> {
+  const confirmDialog = async (): Promise<boolean> => page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('button')]
+    // 横封面弹窗的主按钮是「设置封面 / 完成」，竖封面裁剪弹窗是「保存」。
+    const target = buttons.find(item => /^(保存|设置封面|完成)$/.test(((item as HTMLElement).innerText ?? '').trim()))
+    if (target === undefined) return false
+    ;(target as HTMLElement).click()
+    return true
+  }).catch(() => false)
+  const waitDialogClosed = async (): Promise<void> => {
+    for (let index = 0; index < 12; index += 1) {
+      await page.waitForTimeout(500)
+      const open = await page.evaluate(() => /设置横封面|设置竖封面/.test(document.body.innerText)).catch(() => false)
+      if (open !== true) return
+    }
+  }
+
+  // 1) 横封面 4:3
+  await page.evaluate(() => {
+    const entries = [...document.querySelectorAll('*')].filter(item => ((item as HTMLElement).innerText ?? '').trim() === '选择封面')
+    ;(entries[0] as HTMLElement | undefined)?.click()
+  }).catch(() => {})
+  await page.waitForTimeout(2000)
+  if (!(await setCoverByChooser(page, crops.landscape)) && !(await setCoverImageInput(context, page, crops.landscape))) {
+    log('warn', '抖音：横封面 4:3 上传入口没出现，跳过封面')
+    return
+  }
+  await page.waitForTimeout(1800)
+  await confirmDialog()
+  await page.waitForTimeout(1200)
+
+  // 2) 竖封面：优先顺着「设置竖封面获更多流量」引导，否则点第二个「选择封面」
+  const guided = await page.evaluate(() => {
+    const button = [...document.querySelectorAll('button')].find(item => ((item as HTMLElement).innerText ?? '').trim() === '设置竖封面')
+    if (button === undefined) return false
+    ;(button as HTMLElement).click()
+    return true
+  }).catch(() => false)
+  if (!guided) {
+    await page.evaluate(() => {
+      const entries = [...document.querySelectorAll('*')].filter(item => ((item as HTMLElement).innerText ?? '').trim() === '选择封面')
+      ;(entries[1] as HTMLElement | undefined)?.click()
+    }).catch(() => {})
+    await page.waitForTimeout(1500)
+  }
+  await page.waitForTimeout(1500)
+  if (!(await setCoverByChooser(page, crops.portrait)) && !(await setCoverImageInput(context, page, crops.portrait))) {
+    log('warn', '抖音：竖封面 3:4 上传入口没出现，已设置横封面')
+    await waitDialogClosed()
+    return
+  }
+  await page.waitForTimeout(1800)
+  const done = await confirmDialog()
+  await waitDialogClosed()
+  log(done ? 'info' : 'warn', done ? '抖音：已设置横封面 4:3 + 竖封面 3:4' : '抖音：竖封面没找到确认按钮，已上传但可能未生效')
+}
+
+/** 发布一条成片到视频号。 *//** 发布一条成片到视频号。 */
 export async function publishToChannels(options: PublishChannelsOptions): Promise<PublishChannelsResult> {
   const { videoFile, description, title, signal, log, onProgress } = options
   const { context, how } = await launchPublishBrowser()
@@ -339,6 +553,17 @@ export async function publishToChannels(options: PublishChannelsOptions): Promis
       ...(signal === undefined ? {} : { signal }),
     })
     log('info', '视频上传完成')
+
+    if (options.coverFile !== undefined && options.coverFile !== '') {
+      onProgress({ status: 'publishing', message: '设置发布封面…' })
+      const crops = await prepareCoverCrops({
+        coverFile: options.coverFile,
+        runDir: options.runDir ?? publishProfileDir(),
+        ffmpegPath: options.ffmpegPath ?? process.env.FFMPEG_PATH ?? 'ffmpeg',
+      })
+      if (crops === undefined) log('warn', '封面裁剪失败，沿用平台自动截帧')
+      else await applyChannelsCover(context, page, crops, log)
+    }
 
     onProgress({ status: 'publishing', message: '填写标题和描述…' })
     await fillFields(frame, { description, ...(title === undefined ? {} : { title }) })
@@ -580,6 +805,11 @@ export async function publishToDouyin(options: PublishChannelsOptions): Promise<
     await waitDouyinUpload(page, { timeoutSec: options.uploadTimeoutSec ?? 900, log, ...(signal === undefined ? {} : { signal }) })
     log('info', '抖音视频上传完成')
 
+    if (options.coverFile !== undefined && options.coverFile !== '') {
+      // 抖音封面暂时不稳定（多张图片输入框 + 平台自动推荐封面），先沿用平台自动截帧。
+      onProgress({ status: 'publishing', message: '抖音使用平台自动封面…' })
+      log('info', '抖音封面暂由平台自动生成（自定义封面将在后续版本支持）')
+    }
     onProgress({ status: 'publishing', message: '填写标题和描述…' })
     await fillDouyinFields(page, { description, ...(title === undefined ? {} : { title }) }, log)
 

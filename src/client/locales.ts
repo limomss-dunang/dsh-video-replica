@@ -172,6 +172,11 @@ export interface Copy {
   previewTtsHint: string
   previewSubsHint: string
   subtitleTextLabel: string
+  publishCover: string
+  coverUpload: string
+  coverFromFrame: string
+  coverClear: string
+  coverHint: string
   subtitleTextAsr: string
   subtitleTextScript: string
   subtitleTextHint: string
@@ -388,6 +393,11 @@ export const zh: Copy = {
   previewTtsHint: '只跑 TTS，按成片的音色逐段合成，不消耗视频/图片额度',
   previewSubsHint: '按脚本和分镜时长估算字幕时间轴，可直接核对断句与字号',
   subtitleTextLabel: '字幕文案',
+  publishCover: '发布封面',
+  coverUpload: '上传封面',
+  coverFromFrame: '从成片截帧',
+  coverClear: '清除',
+  coverHint: '不设置则由平台自动截帧；设置后会按平台裁成 3:4 / 4:3 并自动上传',
   subtitleTextAsr: '跟随原声',
   subtitleTextScript: '用脚本台词',
   subtitleTextHint: '跟随原声 = 如实转写分镜音轨；用脚本台词 = 文字取脚本，时间仍按原声语音窗口对齐（原声念错时不跟着错）',
@@ -604,6 +614,11 @@ export const en: Copy = {
   previewTtsHint: 'Runs TTS only — same voices as the final cut, no image or video cost',
   previewSubsHint: 'Estimates subtitle timing from the script and shot durations',
   subtitleTextLabel: 'Subtitle text',
+  publishCover: 'Cover',
+  coverUpload: 'Upload cover',
+  coverFromFrame: 'Frame from video',
+  coverClear: 'Clear',
+  coverHint: 'Leave empty to let the platform pick a frame; otherwise it is cropped to 3:4 / 4:3 and uploaded.',
   subtitleTextAsr: 'Follow audio',
   subtitleTextScript: 'Use script',
   subtitleTextHint: 'Follow audio transcribes the clip audio; Use script keeps your script wording but aligns timing to the spoken windows.',

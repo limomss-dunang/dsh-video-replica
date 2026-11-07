@@ -19,7 +19,7 @@ import { ConfigStore, toConfigView } from './config.ts'
 import type { Engine } from './engine.ts'
 import type { RunStore } from './store.ts'
 import { detectPlatform, extractUrl, looksLikeDirectVideo, parseViaApi } from './providers/parser.ts'
-import { toolAvailable, writeAssSubtitle } from './media.ts'
+import { runCommand, toolAvailable, writeAssSubtitle } from './media.ts'
 import { chatComplete } from './providers/chat.ts'
 import type { DshModels } from './dsh.ts'
 import { completeText, describeEndpoint, resolveEndpoint, usesDsh } from './endpoint-resolver.ts'
@@ -504,6 +504,30 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
         await engine.start(runId, { from: 'publish', autoAdvance: false })
         break
       }
+      case 'cover-from-frame': {
+        // 从成片截一帧当封面。
+        const compose = run.compose
+        if (compose === undefined) throw new Error('还没有成片，先执行「合成成片」')
+        const config = await configs.read()
+        const atSec = Math.max(0, Math.min(compose.durationSec - 0.1, Number(body.atSec ?? 1) || 1))
+        const dir = store.runDir(runId)
+        await mkdir(join(dir, 'cover'), { recursive: true })
+        const file = 'cover/cover-frame.jpg'
+        await runCommand(config.media.ffmpegPath, [
+          '-hide_banner', '-loglevel', 'error', '-y',
+          '-ss', atSec.toFixed(2), '-i', join(dir, compose.file),
+          '-frames:v', '1', '-q:v', '2', join(dir, file),
+        ], { timeoutMs: 60_000 })
+        run.cover = { file, source: 'frame', atSec, createdAt: Date.now() }
+        store.log(run, 'publish', 'info', `已用成片第 ${atSec.toFixed(1)}s 截帧作为封面`)
+        await store.flush(runId)
+        break
+      }
+      case 'cover-clear': {
+        run.cover = undefined
+        await store.flush(runId)
+        break
+      }
       case 'preview-subtitles': {
         // 字幕预览：按脚本与时长估算行，并顺手写一份 ASS 供下载核对。
         const rows = buildSubtitlePreview(run)
@@ -746,6 +770,20 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
     const bytes = await readRawBody(req, kind === 'video' ? MAX_UPLOAD_BYTES : 40 * 1024 * 1024)
     if (bytes.length < 128) throw new Error('文件为空或过小')
     const dir = store.runDir(runId)
+
+    if (kind === 'cover') {
+      await mkdir(join(dir, 'cover'), { recursive: true })
+      const safe = basename(name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').trim() || 'cover.png'
+      const extension = extname(safe).toLowerCase()
+      if (!['.png', '.jpg', '.jpeg', '.webp'].includes(extension)) throw new Error('封面只支持 png / jpg / webp')
+      const file = `cover/cover${extension}`
+      await writeFile(join(dir, file), bytes)
+      run.cover = { file, source: 'upload', createdAt: Date.now() }
+      store.log(run, 'publish', 'info', `已上传发布封面：${safe}`)
+      await store.flush(runId)
+      writeJson(res, 200, { ok: true, value: { file, name: safe, bytes: bytes.length, run } })
+      return undefined
+    }
 
     if (kind === 'video') {
       await mkdir(join(dir, 'source'), { recursive: true })
