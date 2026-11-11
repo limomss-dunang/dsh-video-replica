@@ -451,65 +451,81 @@ export async function applyChannelsCover(context: BrowserContext, page: Page, cr
   }
 }
 
-/** 抖音：先设横封面 4:3；平台若弹出「设置竖封面获更多流量」就顺着引导设竖封面。 */
+/** 抖音：分别设置竖封面 3:4 与横封面 4:3（真实浏览器实测通过）。 */
 export async function applyDouyinCover(context: BrowserContext, page: Page, crops: CoverCrops, log: (level: 'info' | 'warn', text: string) => void): Promise<void> {
-  const confirmDialog = async (): Promise<boolean> => page.evaluate(() => {
-    const buttons = [...document.querySelectorAll('button')]
-    // 横封面弹窗的主按钮是「设置封面 / 完成」，竖封面裁剪弹窗是「保存」。
-    const target = buttons.find(item => /^(保存|设置封面|完成)$/.test(((item as HTMLElement).innerText ?? '').trim()))
-    if (target === undefined) return false
-    ;(target as HTMLElement).click()
+  const clickButton = async (text: string): Promise<boolean> => page.evaluate((label) => {
+    const button = [...document.querySelectorAll('button')].find(item => (item.innerText ?? '').trim() === label)
+    if (button === undefined) return false
+    ;(button as HTMLElement).click()
     return true
-  }).catch(() => false)
+  }, text).catch(() => false)
+
   const waitDialogClosed = async (): Promise<void> => {
-    for (let index = 0; index < 12; index += 1) {
+    for (let index = 0; index < 16; index += 1) {
       await page.waitForTimeout(500)
       const open = await page.evaluate(() => /设置横封面|设置竖封面/.test(document.body.innerText)).catch(() => false)
       if (open !== true) return
     }
   }
 
-  // 1) 横封面 4:3
-  await page.evaluate(() => {
-    const entries = [...document.querySelectorAll('*')].filter(item => ((item as HTMLElement).innerText ?? '').trim() === '选择封面')
-    ;(entries[0] as HTMLElement | undefined)?.click()
-  }).catch(() => {})
-  await page.waitForTimeout(2000)
-  if (!(await setCoverByChooser(page, crops.landscape)) && !(await setCoverImageInput(context, page, crops.landscape))) {
-    log('warn', '抖音：横封面 4:3 上传入口没出现，跳过封面')
-    return
-  }
-  await page.waitForTimeout(1800)
-  await confirmDialog()
-  await page.waitForTimeout(1200)
-
-  // 2) 竖封面：优先顺着「设置竖封面获更多流量」引导，否则点第二个「选择封面」
-  const guided = await page.evaluate(() => {
-    const button = [...document.querySelectorAll('button')].find(item => ((item as HTMLElement).innerText ?? '').trim() === '设置竖封面')
-    if (button === undefined) return false
-    ;(button as HTMLElement).click()
+  /** 打开某个封面格子的编辑器：按「竖封面3:4 / 横封面4:3」标签定位其控制区，点「选择封面 / 编辑封面」。 */
+  const openEditor = async (label: string): Promise<boolean> => {
+    const opened = await page.evaluate((target) => {
+      const labelEl = [...document.querySelectorAll('*')].find(item => (item.textContent ?? '').trim() === target && item.children.length === 0)
+      const control = labelEl?.closest('[class*="coverControl"]')
+      if (control === null || control === undefined) return false
+      const trigger = [...control.querySelectorAll('*')].find(item => /^(选择封面|编辑封面)$/.test((item.textContent ?? '').trim()) && item.children.length === 0)
+      if (trigger === undefined) return false
+      ;(trigger as HTMLElement).click()
+      return true
+    }, label).catch(() => false)
+    if (!opened) return false
+    await page.waitForTimeout(2500)
     return true
-  }).catch(() => false)
-  if (!guided) {
-    await page.evaluate(() => {
-      const entries = [...document.querySelectorAll('*')].filter(item => ((item as HTMLElement).innerText ?? '').trim() === '选择封面')
-      ;(entries[1] as HTMLElement | undefined)?.click()
-    }).catch(() => {})
-    await page.waitForTimeout(1500)
   }
-  await page.waitForTimeout(1500)
-  if (!(await setCoverByChooser(page, crops.portrait)) && !(await setCoverImageInput(context, page, crops.portrait))) {
-    log('warn', '抖音：竖封面 3:4 上传入口没出现，已设置横封面')
+
+  const uploadLastImage = async (file: string): Promise<boolean> => {
+    // 抖音封面对话框里会额外挂出多个图片 input；实测最后一个（semi-upload upload-*）才是封面。
+    const inputs = await page.evaluate(() => [...document.querySelectorAll('input[type=file]')]
+      .map((input, index) => ({ index, accept: (input as HTMLInputElement).accept }))
+      .filter(item => /image/i.test(item.accept))).catch(() => [])
+    const last = inputs[inputs.length - 1]
+    if (last === undefined) return false
+    await page.locator('input[type=file]').nth(last.index).setInputFiles(file).catch(() => {})
+    await page.waitForTimeout(4000)
+    return true
+  }
+
+  const jobs: Array<{ label: string, file: string, name: string }> = [
+    { label: '竖封面3:4', file: crops.portrait, name: '竖封面 3:4' },
+    { label: '横封面4:3', file: crops.landscape, name: '横封面 4:3' },
+  ]
+  let done = 0
+  for (const job of jobs) {
+    if (!(await openEditor(job.label))) {
+      log('warn', `抖音：没找到${job.name}的入口，跳过`)
+      continue
+    }
+    if (!(await uploadLastImage(job.file))) {
+      log('warn', `抖音：${job.name}上传入口没出现，跳过`)
+      await waitDialogClosed()
+      continue
+    }
+    const confirmed = await clickButton('完成')
     await waitDialogClosed()
-    return
+    // 平台常在这时弹「设置横/竖封面」引导，点「暂不设置」关掉，避免挡住后续操作。
+    if (await clickButton('暂不设置')) await page.waitForTimeout(1200)
+    if (confirmed) {
+      done += 1
+      log('info', `抖音：已设置${job.name}`)
+    } else {
+      log('warn', `抖音：${job.name}没找到完成按钮，已上传但可能未生效`)
+    }
   }
-  await page.waitForTimeout(1800)
-  const done = await confirmDialog()
-  await waitDialogClosed()
-  log(done ? 'info' : 'warn', done ? '抖音：已设置横封面 4:3 + 竖封面 3:4' : '抖音：竖封面没找到确认按钮，已上传但可能未生效')
+  log(done === jobs.length ? 'info' : 'warn', done === jobs.length ? '抖音：横竖封面都已设置' : `抖音：只设置了 ${done}/${jobs.length} 张封面`)
 }
 
-/** 发布一条成片到视频号。 *//** 发布一条成片到视频号。 */
+/** 发布一条成片到视频号。 *//** 发布一条成片到视频号。 *//** 发布一条成片到视频号。 */
 export async function publishToChannels(options: PublishChannelsOptions): Promise<PublishChannelsResult> {
   const { videoFile, description, title, signal, log, onProgress } = options
   const { context, how } = await launchPublishBrowser()
@@ -806,9 +822,14 @@ export async function publishToDouyin(options: PublishChannelsOptions): Promise<
     log('info', '抖音视频上传完成')
 
     if (options.coverFile !== undefined && options.coverFile !== '') {
-      // 抖音封面暂时不稳定（多张图片输入框 + 平台自动推荐封面），先沿用平台自动截帧。
-      onProgress({ status: 'publishing', message: '抖音使用平台自动封面…' })
-      log('info', '抖音封面暂由平台自动生成（自定义封面将在后续版本支持）')
+      onProgress({ status: 'publishing', message: '设置发布封面…' })
+      const crops = await prepareCoverCrops({
+        coverFile: options.coverFile,
+        runDir: options.runDir ?? publishProfileDir(),
+        ffmpegPath: options.ffmpegPath ?? process.env.FFMPEG_PATH ?? 'ffmpeg',
+      })
+      if (crops === undefined) log('warn', '封面裁剪失败，沿用平台自动截帧')
+      else await applyDouyinCover(context, page, crops, log)
     }
     onProgress({ status: 'publishing', message: '填写标题和描述…' })
     await fillDouyinFields(page, { description, ...(title === undefined ? {} : { title }) }, log)
