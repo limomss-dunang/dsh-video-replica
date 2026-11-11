@@ -8,6 +8,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -15,8 +16,15 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      # 用静态构建，避免 apt-get 在 runner 上偶发卡死（曾卡 15 分钟以上）。
+      - name: Install ffmpeg (static build)
+        run: |
+          sudo apt-get remove -y ffmpeg >/dev/null 2>&1 || true
+          curl -fsSL --retry 3 --max-time 180 -o /tmp/ffmpeg.tar.xz https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+          mkdir -p /tmp/ffmpeg && tar -xf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg --strip-components=1
+          sudo mv /tmp/ffmpeg/ffmpeg /tmp/ffmpeg/ffprobe /usr/local/bin/
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
 
       - name: Install dependencies (also builds lib/ via prepare)
         run: npm install
@@ -32,6 +40,7 @@ jobs:
 
   ui:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -46,11 +55,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Playwright + Chromium + CJK fonts
+      - name: Install Playwright Chromium
         run: |
           pip install playwright
           python -m playwright install --with-deps chromium
-          sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+
+      # 中文字体只影响截图观感，装不上也继续（避免 apt 卡死整条流水线）。
+      - name: Install CJK font (best effort)
+        continue-on-error: true
+        run: |
+          timeout 120 sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update || true
+          timeout 180 sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y fonts-noto-cjk || true
 
       - name: Render workbench screenshots (real client bundle)
         run: python scripts/preview/shots.py
