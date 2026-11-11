@@ -56,9 +56,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install Playwright Chromium
+        # 不加 --with-deps：它会再跑一次 apt（runner 上偶发卡死）。GitHub 的镜像自带
+        # Chromium 依赖所需的系统库；真缺库时 scripts/preview/shots.py 会退回系统 Chrome。
         run: |
           pip install playwright
-          python -m playwright install --with-deps chromium
+          timeout 420 python -m playwright install chromium
 
       # 中文字体只影响截图观感，装不上也继续（避免 apt 卡死整条流水线）。
       - name: Install CJK font (best effort)

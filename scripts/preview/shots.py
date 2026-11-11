@@ -28,7 +28,11 @@ SHOTS = [
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        try:
+            browser = playwright.chromium.launch()
+        except Exception as error:  # 缺系统库时退回镜像自带的 Chrome
+            print(f"chromium 启动失败，改用系统 Chrome：{error}", file=sys.stderr)
+            browser = playwright.chromium.launch(channel="chrome")
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=2)
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(f"pageerror: {error}"))
