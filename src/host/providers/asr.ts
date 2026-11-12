@@ -4,6 +4,8 @@
  * 两种协议：
  * - `openai-transcription`：POST {base}/audio/transcriptions（multipart Whisper 协议）
  *   → { text, segments:[{start,end,text}] }；不支持 verbose_json 时退回 json。
+ * - `volc-asr`：火山豆包「大模型流式识别」WebSocket（本地音频直接推流，不需要公网 URL）
+ *     wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream，二进制帧协议
  * - `chat-asr`：POST {base}/chat/completions，音频作为 `input_audio` 内容块传入
  *   （小米 MiMo `mimo-v2.5-asr` 就是这个协议）；返回内容是纯文本，没有时间戳，
  *   再按字数比例铺到时间轴上。
@@ -18,6 +20,7 @@ import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import type { AsrConfig, TranscriptCue } from '../../shared/types.ts'
 import { authHeaders, baseUrlOf, extraParams, joinUrl, requestText } from './http.ts'
+import { volcTranscribe } from './volc.ts'
 
 export interface AsrRequest {
   config: AsrConfig
@@ -84,6 +87,18 @@ export async function transcribeAudio(request: AsrRequest): Promise<TranscriptCu
   const base = baseUrlOf(config.apiUrl, '/v1')
   const timeoutMs = Math.max(60_000, (config.timeoutSec ?? 300) * 1000)
   const protocol = config.protocol.trim() === '' ? 'openai-transcription' : config.protocol.trim()
+
+  if (protocol === 'volc-asr') {
+    return await volcTranscribe({
+      apiUrl: config.apiUrl,
+      apiKey: config.apiKey,
+      resourceId: config.model.trim(),
+      audioFile: request.audioFile,
+      durationSec: request.durationSec,
+      label: request.label,
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+    })
+  }
 
   if (protocol === 'chat-asr') {
     return await transcribeViaChat(request, base, timeoutMs)

@@ -99,8 +99,24 @@
 
 - `openai-tts`：`POST {base}/audio/speech`，`{model, input, voice, response_format:'mp3', speed}`
 - `chat-tts`：`POST {base}/chat/completions` + `audio:{format,voice}`，取 `choices[0].message.audio.data`（base64 WAV）
+- `volc-tts`：火山豆包语音「单向流式 HTTP」——`POST {base}/api/v3/tts/unidirectional`，
+  头 `X-Api-Key` + `X-Api-Resource-Id: seed-tts-2.0` + `X-Api-Request-Id`，
+  体 `{req_params:{text, speaker, audio_params:{format:'mp3', sample_rate:24000}}}`；
+  返回 chunked JSON，每块 `data` 是 base64 音频，拼接后落盘。
+  **接口地址填 `https://openspeech.bytedance.com`，Key 用豆包语音控制台（console.volcengine.com/speech）的 API Key，
+  「模型」字段填 `seed-tts-2.0`，「音色」填音色库里的 speaker ID（如 `zh_female_shuangkuaisisi_moon_bigtts`）。**
 
 不配置配音时：成片沿用分镜视频自带的音轨（大多数视频模型 `generate_audio:true` 时自带配音）。
+
+## 语音识别（可选）
+
+- `openai-transcription`：`POST {base}/audio/transcriptions`（Whisper multipart）
+- `chat-asr`：`POST {base}/chat/completions` + `input_audio`
+- `volc-asr`：火山豆包「大模型流式识别」WebSocket — `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream`，
+  头 `X-Api-Key` + `X-Api-Resource-Id`（2.0 小时版 `volc.seedasr.sauc.duration`），
+  二进制帧推本地 PCM（16k/16bit/单声道），返回 `result.utterances` 带毫秒级起止时间。
+  接口地址填 `https://openspeech.bytedance.com`，「模型」字段填上面的 Resource-Id。
+
 
 ## 语音识别（可选，强烈建议）
 
@@ -213,7 +229,8 @@ ARK 的图片生成和视频生成共用同一个 Key 与域名，插件不需�
 | 仿写输出被截断 | 模型输出超长（`max_tokens` 打满）时 JSON 没闭合，插件会自动补齐括号/引号（可能丢最后一条分镜）后重试解析；同时提示词限制「每版最多 8 镜、visualPrompt ≤60 字」。 |
 | 视频（Grok Imagine 系） | 用最小字段集 `{model, prompt, duration, size, image?}`。实测多塞 `seconds/num_frames/width/height` 等别名会返回 `internal_error` |
 | 视频（其它通用网关） | 一次带上 `size+width/height`、`seconds+duration`、`frame_rate+num_frames`、`image+input_reference` 等别名，多余字段一般被忽略 |
-| 配音 | 先发 `/audio/speech`；404/405 时自动切「聊天接口返回音频」形态；音色不被支持时解析报错里的可用音色并自动重试 |
+| 配音 | 先发 `/audio/speech`；404/405 时自动切「聊天接口返回音频」形态；音色不被支持时解析报错里的可用音色并自动重试；`volc-tts` 走豆包语音单向流式接口 |
+| 语音识别 | `openai-transcription` / `chat-asr`；`volc-asr` 走豆包「大模型流式识别」WebSocket（本地音频直推，返回分句时间戳） |
 | 语音识别 | `/audio/transcriptions` 404 时明确提示网关不支持该端点，并继续只用画面拆解 |
 
 ## 拆解模型怎么选（决定能不能抓住「核心创意」）

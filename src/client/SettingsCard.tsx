@@ -25,14 +25,32 @@ import { tt } from './locales.ts'
 
 type Stage = 'parser' | 'analyze' | 'rewrite' | 'image' | 'video' | 'tts' | 'asr'
 
+const PROTOCOL_LABELS: Record<string, string> = {
+  'parser-json': '解析服务（JSON）',
+  chat: '聊天补全（Chat）',
+  'openai-images': 'OpenAI 图片',
+  'ark-seedance': '火山方舟 Seedance',
+  'openai-video': 'OpenAI 视频',
+  'openai-tts': 'OpenAI TTS',
+  'chat-tts': '聊天接口返回音频',
+  'volc-tts': '火山豆包语音（TTS）',
+  'chat-asr': '聊天接口语音识别',
+  'openai-transcription': 'OpenAI Whisper',
+  'volc-asr': '火山豆包语音识别（ASR）',
+}
+
+function protocolLabel(protocol: string): string {
+  return PROTOCOL_LABELS[protocol] === undefined ? protocol : `${PROTOCOL_LABELS[protocol]}（${protocol}）`
+}
+
 const PROTOCOLS: Record<Stage, string[]> = {
   parser: ['parser-json'],
   analyze: ['chat'],
   rewrite: ['chat'],
   image: ['openai-images'],
   video: ['ark-seedance', 'openai-video'],
-  tts: ['openai-tts', 'chat-tts'],
-  asr: ['chat-asr', 'openai-transcription'],
+  tts: ['openai-tts', 'chat-tts', 'volc-tts'],
+  asr: ['chat-asr', 'openai-transcription', 'volc-asr'],
 }
 
 /** 这一步产出的媒体类型决定 DSH 选择器里的提示。 */
@@ -265,7 +283,7 @@ function EndpointFields(props: {
             value={String(value.protocol ?? props.protocols[0])}
             onChange={event => props.onChange({ protocol: event.target.value })}
           >
-            {props.protocols.map(protocol => <option key={protocol} value={protocol}>{protocol}</option>)}
+            {props.protocols.map(protocol => <option key={protocol} value={protocol}>{protocolLabel(protocol)}</option>)}
           </select>
         </Field>
       </div>

@@ -4,6 +4,9 @@
  * - `openai-tts`（默认）：POST {base}/audio/speech
  *     {model, input, voice, response_format:'mp3', speed} → 音频二进制
  *   兼容 OpenAI TTS、以及多数透传该接口的聚合网关。
+ * - `volc-tts`：火山豆包语音「单向流式 HTTP」接口（openspeech.bytedance.com）
+ *     POST {base}/api/v3/tts/unidirectional，X-Api-Key + X-Api-Resource-Id
+ *     → chunked JSON，每块 data 为 base64 音频，拼接后落盘
  * - `chat-tts`：小米 MiMo 那类「聊天接口返回音频」的形态
  *     POST {base}/chat/completions
  *     {model, messages:[...], audio:{format:'wav', voice}}
@@ -13,6 +16,7 @@
 import { writeFile } from 'node:fs/promises'
 import type { TtsConfig } from '../../shared/types.ts'
 import { authHeaders, baseUrlOf, extraParams, joinUrl, requestBuffer, requestJson } from './http.ts'
+import { volcSynthesize } from './volc.ts'
 
 export interface TtsRequest {
   config: TtsConfig
@@ -48,6 +52,19 @@ export async function synthesizeSpeech(request: TtsRequest): Promise<{ file: str
   const text = request.text.trim()
   if (text === '') throw new Error(`${request.label}：配音文本为空`)
   const protocol = config.protocol.trim() === '' ? 'openai-tts' : config.protocol.trim()
+
+  if (protocol === 'volc-tts') {
+    return await volcSynthesize({
+      apiUrl: config.apiUrl,
+      apiKey: config.apiKey,
+      resourceId: config.model.trim(),
+      voice: config.voice.trim(),
+      text,
+      outFile: request.outFile,
+      label: request.label,
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+    })
+  }
 
   if (protocol === 'chat-tts' || protocol === 'chat') {
     const headers = authHeaders(config.apiKey, { 'content-type': 'application/json' })
