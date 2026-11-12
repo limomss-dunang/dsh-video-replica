@@ -23,6 +23,7 @@ import { runCommand, toolAvailable, writeAssSubtitle } from './media.ts'
 import { chatComplete } from './providers/chat.ts'
 import type { DshModels } from './dsh.ts'
 import { completeText, describeEndpoint, resolveEndpoint, usesDsh } from './endpoint-resolver.ts'
+import { probeModels } from './providers/probe.ts'
 import type { EndpointConfig } from '../shared/types.ts'
 import { dirname } from 'node:path'
 import { regenerateFrame, regenerateSegment, type PipelineContext } from './pipeline.ts'
@@ -756,6 +757,15 @@ export function makeRoutes(deps: RoutesDeps): WebRoute[] {
 
     const latest = await store.get(runId)
     return { run: latest, busy: engine.isBusy(runId) }
+  })
+
+  // ---------------------------------------------------------------- probe
+
+  onPost(API.probe, async body => {
+    const stage = asString(body.stage, 'rewrite') as 'parser' | 'analyze' | 'rewrite' | 'image' | 'video' | 'tts' | 'asr'
+    const apiUrl = asString(body.apiUrl)
+    const apiKey = asString(body.apiKey)
+    return await probeModels({ stage, apiUrl, apiKey })
   })
 
   // ---------------------------------------------------------------- upload

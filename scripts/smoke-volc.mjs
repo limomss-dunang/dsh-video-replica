@@ -87,6 +87,55 @@ const err = parseServerFrame(Buffer.from([
 ]))
 check('错误帧返回 error', typeof err.error === 'string', String(err.error).slice(0, 60))
 
+// 5) 接口地址 + 模型 → 协议自动匹配
+const { inferProtocol, matchPreset, modelMatchesStage, suggestedModels } = await import('../src/shared/provider-detect.ts')
+
+check('火山方舟 → 生图协议', inferProtocol('image', 'https://ark.cn-beijing.volces.com/api/v3', 'doubao-seedream-5-0-260128') === 'openai-images')
+check('火山方舟 → 生视频协议', inferProtocol('video', 'https://ark.cn-beijing.volces.com/api/v3', 'doubao-seedance-2-0-260128') === 'ark-seedance')
+check('火山方舟 → 文本协议', inferProtocol('analyze', 'https://ark.cn-beijing.volces.com/api/v3', 'doubao-seed-2-1-lite-260915') === 'chat')
+check('豆包语音 → TTS 协议', inferProtocol('tts', 'https://openspeech.bytedance.com', 'seed-tts-2.0') === 'volc-tts')
+check('豆包语音 → ASR 协议', inferProtocol('asr', 'https://openspeech.bytedance.com', 'volc.seedasr.sauc.duration') === 'volc-asr')
+check('小米 MiMo → chat-tts', inferProtocol('tts', 'https://api.xiaomimimo.com/v1', 'mimo-v2.5-tts') === 'chat-tts')
+check('小米 MiMo → chat-asr', inferProtocol('asr', 'https://api.xiaomimimo.com/v1', 'mimo-v2.5-asr') === 'chat-asr')
+check('OpenAI → whisper', inferProtocol('asr', 'https://api.openai.com/v1', 'whisper-1') === 'openai-transcription')
+check('未知网关 → 通用回退', inferProtocol('tts', 'https://gateway.example.com/v1', 'some-tts') === 'openai-tts')
+check('识别火山预设', matchPreset('https://ark.cn-beijing.volces.com/api/v3')?.id === 'ark')
+check('识别豆包语音预设', matchPreset('https://openspeech.bytedance.com')?.id === 'openspeech')
+check('模型按阶段过滤：seedream 属于生图', modelMatchesStage('image', 'doubao-seedream-5-0-260128'))
+check('模型按阶段过滤：seedream 不属于生视频', !modelMatchesStage('video', 'doubao-seedream-5-0-260128'))
+check('模型按阶段过滤：embedding 不属于文本', !modelMatchesStage('rewrite', 'text-embedding-3-large'))
+const suggested = suggestedModels('image', 'https://ark.cn-beijing.volces.com/api/v3', ['doubao-seedream-4-0-250828', 'doubao-seedance-2-0-260128'])
+check('推荐模型去重且保留预设顺序', suggested[0] === 'doubao-seedream-5-0-260128' && !suggested.includes('doubao-seedance-2-0-260128'), JSON.stringify(suggested))
+
+// 6) 模型探测：对着本地假 /models 服务验证「列表 → 过滤 → 协议」
+const http = await import('node:http')
+const { probeModels } = await import('../src/host/providers/probe.ts')
+const server = http.createServer((req, res) => {
+  if ((req.url ?? '').startsWith('/v1/models')) {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ data: [
+      { id: 'doubao-seedream-4-0-250828' },
+      { id: 'doubao-seedance-2-0-260128' },
+      { id: 'doubao-seed-2-1-lite-260915' },
+      { id: 'text-embedding-3-large' },
+    ] }))
+    return
+  }
+  res.writeHead(404); res.end('{}')
+})
+await new Promise(resolve => server.listen(0, resolve))
+const port = server.address().port
+const fakeBase = `http://127.0.0.1:${port}/v1`
+const probedImage = await probeModels({ stage: 'image', apiUrl: fakeBase, apiKey: 'k' })
+check('探测生图模型并匹配协议', probedImage.protocol === 'openai-images' && probedImage.models.includes('doubao-seedream-4-0-250828'), JSON.stringify(probedImage.models))
+const probedVideo = await probeModels({ stage: 'video', apiUrl: fakeBase, apiKey: 'k' })
+check('探测生视频模型并匹配 Seedance 协议', probedVideo.protocol === 'ark-seedance' && probedVideo.models.includes('doubao-seedance-2-0-260128'))
+const probedText = await probeModels({ stage: 'rewrite', apiUrl: fakeBase, apiKey: 'k' })
+check('文本阶段过滤掉 embedding', !probedText.models.includes('text-embedding-3-large'), JSON.stringify(probedText.models))
+const probedSpeech = await probeModels({ stage: 'tts', apiUrl: 'https://openspeech.bytedance.com', apiKey: 'k' })
+check('豆包语音预设无需 /models', probedSpeech.protocol === 'volc-tts' && probedSpeech.models[0] === 'seed-tts-2.0')
+server.close()
+
 if (failures > 0) {
   console.log(`[volc] 失败 ${failures} 项`)
   process.exit(1)

@@ -115,6 +115,19 @@ GitHub 自动生成的 **Source code (zip / tar.gz)** 不含构建产物 `lib/`�
 
 ## 模型配置
 
+**最简单的填法：只填接口地址和 Key。** 填完点「检测模型」，插件会拉取该网关的模型列表、按当前步骤筛选，选一个就自动匹配协议；已知的网关（火山方舟、火山豆包语音、OpenAI、小米 MiMo、DeepSeek、阿里百炼）连模型候选都预置好了。
+
+| 你填的接口地址 | 自动识别为 | 自动选用的协议 |
+|---|---|---|
+| `https://ark.cn-beijing.volces.com/api/v3` | 火山方舟 | 文本/拆解 `chat`、生图 `openai-images`、生视频 `ark-seedance` |
+| `https://openspeech.bytedance.com` | 火山豆包语音 | 配音 `volc-tts`、识别 `volc-asr` |
+| `https://api.openai.com/v1` | OpenAI | `chat` / `openai-images` / `openai-tts` / `openai-transcription` |
+| `https://api.xiaomimimo.com/v1` | 小米 MiMo | `chat` / `chat-tts` / `chat-asr` |
+
+协议下拉仍然保留，自动匹配后可以手动改。
+
+
+
 每一步的模型有两种来源，在设置页顶部标签里切换：
 
 - **DSH 已配置模型（推荐）**：直接从「设置 → 模型」里已经配好的提供商与模型里选，

@@ -713,6 +713,7 @@ export const API = {
   upload: `${API_ROOT}/upload`,
   media: `${API_ROOT}/media`,
   models: `${API_ROOT}/models`,
+  probe: `${API_ROOT}/probe`,
 } as const
 
 /** 成片画幅：source = 跟随源片，其余为显式比例。 */

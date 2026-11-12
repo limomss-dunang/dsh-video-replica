@@ -20,6 +20,8 @@ import type {
   PluginConfig,
 } from '../shared/types.ts'
 import { CONFIG_SAVED_EVENT, SECRET_MASK } from '../shared/protocol.ts'
+import { API } from '../shared/types.ts'
+import { inferProtocol, matchPreset } from '../shared/provider-detect.ts'
 import { VideoReplicaApi } from './api.ts'
 import { tt } from './locales.ts'
 
@@ -238,6 +240,8 @@ function DshModelPicker(props: {
 function EndpointFields(props: {
   value: PluginConfig[Stage] & { apiKey: string }
   protocols: string[]
+  /** 当前阶段：自动探测模型与协议时用来筛选。 */
+  stage: Stage
   /** 解析接口没有模型概念，隐藏模型输入框。 */
   showModel?: boolean
   onChange: (patch: Record<string, unknown>) => void
@@ -246,7 +250,44 @@ function EndpointFields(props: {
   testResult: string | undefined
 }): JSX.Element {
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [probing, setProbing] = useState(false)
+  const [probeError, setProbeError] = useState('')
+  const [probeNote, setProbeNote] = useState('')
+  const [probeModels, setProbeModels] = useState<string[]>([])
   const value = props.value as unknown as Record<string, unknown>
+
+  /** 用接口地址 + Key 探测可用模型，选中的模型自动带出协议。 */
+  const detect = async (): Promise<void> => {
+    setProbing(true)
+    setProbeError('')
+    setProbeNote('')
+    try {
+      const response = await fetch(API.probe, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          stage: props.stage,
+          apiUrl: String(value.apiUrl ?? ''),
+          apiKey: String(value.apiKey ?? ''),
+        }),
+      })
+      const envelope = await response.json() as { ok?: boolean, error?: string, value?: { models?: string[], protocol?: string, provider?: string, note?: string, listed?: boolean, error?: string } }
+      if (envelope.ok !== true) throw new Error(envelope.error ?? '检测失败')
+      const result = envelope.value ?? {}
+      setProbeModels(result.models ?? [])
+      if (result.note !== undefined) setProbeNote(result.note)
+      if (result.error !== undefined) setProbeError(result.error)
+      // 只有一个候选时直接选中，省一次点击
+      const only = result.models ?? []
+      if (only.length === 1 && only[0] !== undefined) {
+        props.onChange({ model: only[0], ...(result.protocol === undefined ? {} : { protocol: result.protocol }) })
+      } else if (result.protocol !== undefined && String(value.protocol ?? '') === '') {
+        props.onChange({ protocol: result.protocol })
+      }
+    } finally {
+      setProbing(false)
+    }
+  }
   return (
     <>
       <div className="vr-grid-2">
@@ -255,7 +296,13 @@ function EndpointFields(props: {
             className="vr-input"
             value={String(value.apiUrl ?? '')}
             placeholder="https://api.example.com/v1"
-            onChange={event => props.onChange({ apiUrl: event.target.value })}
+            onChange={event => {
+              const nextUrl = event.target.value
+              // 已知提供商的接口地址一填进来就自动切到正确协议，用户不用管协议名。
+              const preset = matchPreset(nextUrl)
+              const protocol = preset?.protocols[props.stage]
+              props.onChange(protocol === undefined ? { apiUrl: nextUrl } : { apiUrl: nextUrl, protocol })
+            }}
           />
         </Field>
         <Field label={tt('apiKey')} hint={String(value.apiKey ?? '') === '' ? tt('apiKeyUnset') : tt('apiKeySet')}>
@@ -268,13 +315,42 @@ function EndpointFields(props: {
           />
         </Field>
         {props.showModel === false ? null : (
-          <Field label={tt('modelName')}>
-            <input
-              className="vr-input"
-              value={String(value.model ?? '')}
-              placeholder="gpt-4o / doubao-seedance-2-0 / …"
-              onChange={event => props.onChange({ model: event.target.value })}
-            />
+          <Field label={tt('modelName')} hint={tt('modelAutoHint')}>
+            <div className="vr-row" style={{ gap: 6, alignItems: 'center' }}>
+              <input
+                className="vr-input"
+                style={{ flex: 1, minWidth: 0 }}
+                value={String(value.model ?? '')}
+                placeholder="点右侧「检测模型」自动列出，或手填"
+                onChange={event => props.onChange({ model: event.target.value })}
+              />
+              <button
+                type="button"
+                className="vr-btn"
+                data-size="sm"
+                disabled={probing || String(value.apiUrl ?? '').trim() === ''}
+                onClick={() => void detect()}
+                title={tt('detectModelsHint')}
+              >
+                {probing ? tt('detecting') : tt('detectModels')}
+              </button>
+            </div>
+            {probeModels.length > 0 && (
+              <select
+                className="vr-select"
+                style={{ marginTop: 6 }}
+                value={String(value.model ?? '')}
+                onChange={event => {
+                  const picked = event.target.value
+                  props.onChange({ model: picked, protocol: inferProtocol(props.stage, String(value.apiUrl ?? ''), picked) })
+                }}
+              >
+                <option value="">选择检测到的模型（{probeModels.length}）</option>
+                {probeModels.map(item => <option key={item} value={item}>{item}</option>)}
+              </select>
+            )}
+            {probeNote !== '' && <span className="vr-hint">{probeNote}</span>}
+            {probeError !== '' && <span className="vr-hint">{probeError}</span>}
           </Field>
         )}
         <Field label={tt('protocol')}>
@@ -466,6 +542,7 @@ export function VideoReplicaSettingsSection(): JSX.Element {
       <EndpointFields
         value={value}
         protocols={PROTOCOLS[stage]}
+        stage={stage}
         {...(stage === 'parser' ? { showModel: false } : {})}
         onChange={values => patch(stage, values)}
         onTest={() => void test(stage)}
@@ -518,6 +595,7 @@ export function VideoReplicaSettingsSection(): JSX.Element {
         <EndpointFields
           value={endpoint('parser')}
           protocols={PROTOCOLS.parser}
+          stage="parser"
           showModel={false}
           onChange={values => patch('parser', values)}
           onTest={() => void test('parser')}

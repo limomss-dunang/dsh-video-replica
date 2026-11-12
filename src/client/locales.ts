@@ -167,6 +167,10 @@ export interface Copy {
   publishStatus: string
   openFolder: string
   runNext: string
+  detectModels: string
+  detecting: string
+  modelAutoHint: string
+  detectModelsHint: string
   previewTts: string
   previewSubtitles: string
   previewTtsHint: string
@@ -388,6 +392,10 @@ export const zh: Copy = {
   publishStatus: '发布状态',
   openFolder: '打开文件夹',
   runNext: '执行下一步',
+  detectModels: '检测模型',
+  detecting: '检测中…',
+  modelAutoHint: '填好接口地址和 Key 后点「检测模型」，从下拉里选一个即可，协议会自动匹配',
+  detectModelsHint: '用当前接口地址和 Key 拉取模型列表，并按当前步骤筛选',
   previewTts: '试听配音',
   previewSubtitles: '预览字幕',
   previewTtsHint: '只跑 TTS，按成片的音色逐段合成，不消耗视频/图片额度',
@@ -609,6 +617,10 @@ export const en: Copy = {
   publishStatus: 'Publish status',
   openFolder: 'Open folder',
   runNext: 'Run next step',
+  detectModels: 'Detect models',
+  detecting: 'Detecting…',
+  modelAutoHint: 'Fill the base URL and key, click Detect models, then pick one — the protocol follows automatically',
+  detectModelsHint: 'List models from this endpoint and filter them for the current step',
   previewTts: 'Preview voiceover',
   previewSubtitles: 'Preview subtitles',
   previewTtsHint: 'Runs TTS only — same voices as the final cut, no image or video cost',

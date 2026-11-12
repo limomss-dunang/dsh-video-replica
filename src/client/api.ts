@@ -180,6 +180,11 @@ export class VideoReplicaApi {
     return this.action({ runId, action: 'reset-anchor' })
   }
 
+  /** 探测某阶段在给定接口地址下可用的模型，并推断协议。 */
+  probeModels(input: { stage: string, apiUrl: string, apiKey: string }): Promise<{ models?: string[], protocol?: string, provider?: string, note?: string, listed?: boolean, error?: string }> {
+    return postJson(API.probe, input)
+  }
+
   previewTts(runId: string): Promise<{ items?: Array<{ index: number, speaker: string, voice: string, text: string, file: string }> }> {
     return this.action({ runId, action: 'preview-tts' }) as unknown as Promise<{ items?: Array<{ index: number, speaker: string, voice: string, text: string, file: string }> }>
   }
